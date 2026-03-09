@@ -84,15 +84,13 @@ The overall traffic light uses the following rules (in order of severity):
 3. If one metric is AMBER and the rest are GREEN: overall is AMBER
 4. If all metrics are GREEN: overall is GREEN
 
-This means a single amber flag does not trigger the overall amber unless either the flag is strong or multiple metrics are pointing in the same direction. Two amber flags together are treated as more significant than either alone.
-
 The thresholds for each metric:
 
 | Metric | Green | Amber | Red |
 |--------|-------|-------|-----|
 | Score PSI | < 0.10 | 0.10 - 0.20 | > 0.20 |
-| A/E ratio | CI contains 1.0 | 0.95-1.05 but CI excludes 1.0 | CI excludes [0.90, 1.10] |
-| Gini drop | p > 0.10 | p 0.05-0.10 or drop < 0.03 | p < 0.05 and drop >= 0.03 |
+| A/E ratio | CI contains 1.0 | CI excludes 1.0 but ratio in [0.90, 1.10] | CI excludes 1.0 and ratio outside [0.90, 1.10] |
+| Gini drop | drop < 0.03 AND p > 0.10 | (p 0.05-0.10) OR (p < 0.05 and drop < 0.03) | p < 0.05 and drop >= 0.03 |
 | Any CSI | < 0.10 | 0.10 - 0.20 | > 0.20 |
 
 The A/E traffic light is based on the confidence interval, not just the point estimate. An A/E of 1.08 with a wide confidence interval (portfolio of 500 policies) is green; an A/E of 1.04 with a narrow confidence interval (portfolio of 50,000 policies) is amber.

@@ -12,7 +12,7 @@ Consider what has changed in UK motor in recent years:
 
 **Whiplash reform (May 2021).** The Civil Liability Act 2018 changed how soft-tissue injury claims are assessed. Small injury claims moved through the new Official Injury Claim portal. The severity distribution for third-party claims shifted discontinuously at the reform date.
 
-**Ogden rate change (August 2019, then July 2023).** The Ogden rate determines how large catastrophic injury lump sums are calculated. When it changed from -0.75% to -0.25% in 2019, catastrophic injury reserves moved across the industry. A frequency/severity model trained before the change had the wrong severity relationship baked in.
+**Ogden rate change (August 2019, then July 2024).** The Ogden rate determines how large catastrophic injury lump sums are calculated. When it changed from -0.75% to -0.25% in 2019, catastrophic injury reserves moved across the industry. The July 2024 review moved the rate again, from -0.25% to +0.5%. A frequency/severity model trained before either change had the wrong severity relationship baked in.
 
 **Used car price inflation (2021-2022).** Average sum insured for comprehensive policies rose significantly as second-hand car values spiked post-COVID. A vehicle age model trained on pre-2021 data saw a different relationship between age and value.
 
@@ -26,7 +26,7 @@ Everything else in this module builds on that foundation: ways to diagnose *why*
 
 ### Regulatory context: PRA SS1/23
 
-The Prudential Regulation Authority Supervisory Statement SS1/23 ("Model risk management principles for banks") applies to insurers via their internal model governance. While SS1/23 was drafted primarily for banks, the PRA has made clear through Dear CEO letters in 2023 and 2024 that insurers are expected to maintain documented model monitoring frameworks for material pricing models.
+The Prudential Regulation Authority Supervisory Statement SS1/23 ("Model risk management principles for banks") is the most detailed published guidance on model monitoring available in the UK regulatory framework. SS1/23 was drafted primarily for banks and applies directly to PRA-regulated insurers using internal models for capital purposes. For personal lines pricing teams at firms that do not operate internal capital models, SS1/23 is recognised good practice rather than a direct obligation — but it is what the PRA looks favourably on, and it aligns with the actuarial professional standards that apply regardless of firm size.
 
 The key expectations in SS1/23 relevant to pricing model monitoring are:
 
@@ -35,7 +35,7 @@ The key expectations in SS1/23 relevant to pricing model monitoring are:
 - **Escalation triggers**: thresholds should be defined in advance, with a documented response process for when they are breached
 - **Documentation**: monitoring outcomes should be recorded and available for review
 
-We address all four of these in this module. Part 15 covers producing the evidence pack that satisfies a PRA review.
+We address all four of these in this module. Part 15 covers producing the evidence pack that satisfies a PRA review — and the FCA requirements that are equally relevant for personal lines teams.
 
 ### What "monitoring" actually means day to day
 

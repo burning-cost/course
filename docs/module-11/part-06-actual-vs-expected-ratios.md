@@ -21,6 +21,12 @@ The `AERatio` class computes a 95% confidence interval for the A/E under a Poiss
 
 If 1.0 is inside the 95% confidence interval, there is no statistically significant evidence of a calibration shift.
 
+> **Note on the CI formula:** We use `sqrt(A)` (observed variance) rather than `sqrt(E)` (null-hypothesis variance). Under the null, A ~ Poisson(E) and the exact variance is E, so the null-hypothesis CI would use `sqrt(E)`. The Wald CI using `sqrt(A)` is equivalent when A/E is close to 1.0. The difference becomes meaningful when A/E is far from 1.0 — for example, at A/E = 1.30 with E = 1,000, using `sqrt(A)` gives a slightly wider CI than the exact Poisson CI. For routine monitoring, the Wald approximation is adequate; for near-threshold decisions, be aware the CI may be marginally conservative.
+
+### A note on development lag
+
+For the purposes of frequency monitoring, we assume claims from the current period are largely complete at the time of the run. For lines with significant IBNR — commercial liability, professional indemnity, or any long-tailed motor book — apply development factors to the actual claim count before computing the A/E ratio. Monitoring against undeveloped actuals will show a spurious downward A/E trend that has nothing to do with model drift.
+
 ### Portfolio-level A/E
 
 ```python

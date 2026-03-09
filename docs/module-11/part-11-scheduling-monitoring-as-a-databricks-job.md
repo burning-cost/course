@@ -1,5 +1,7 @@
 ## Part 11: Scheduling monitoring as a Databricks job
 
+> **Databricks tier note:** Parts 11 and 12 cover features that require a paid Databricks workspace. Workflows/Jobs, SQL Alerts, and Secrets (`dbutils.secrets`) are not available on Databricks Community Edition. If you are on Community Edition, read these parts for understanding of how production monitoring works — but you will not be able to run them. The notebook itself (Parts 1–10) runs on Community Edition without modification.
+
 ### Why manual runs are not enough
 
 Running the monitoring notebook manually each month is fine for learning. It is not acceptable for a deployed pricing model. Manual runs get skipped when people are on holiday. They get run late. They get run on the wrong date range. Most importantly, they do not produce alerts when something goes wrong at 2am on a Sunday.

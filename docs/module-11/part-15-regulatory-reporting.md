@@ -12,6 +12,16 @@ SS1/23 does not specify a particular report format. What it requires is evidence
 
 The Delta tables from Parts 10 and 13 contain all of this information. This part shows how to extract it into a coherent evidence pack.
 
+### FCA obligations for personal lines pricing teams
+
+For a personal lines pricing team, the FCA's regulatory requirements are at least as directly relevant as PRA guidance — and in many firms will be the primary obligation.
+
+The **general insurance pricing practices rules** (PS21/5, effective January 2022) prohibit price walking and require firms to evidence that renewal pricing is fair relative to equivalent new business pricing. A monitoring framework that tracks A/E ratios by policy tenure and renewal count is directly useful for demonstrating compliance.
+
+The **Consumer Duty** (PS22/9, in force July 2023) goes further. It requires firms to demonstrate that their products provide fair value to customers — not just that pricing processes were followed, but that outcomes are fair. For a pricing model, this means being able to show that the model is not systematically overcharging identifiable cohorts of customers. Monitoring A/E ratios by segment (age band, region, vehicle group) is one of the most direct ways to produce this evidence: if the model is consistently predicting more claims than occur for a particular segment, those customers are being overcharged relative to their actual risk. The Consumer Duty requires firms to act on this, not just observe it.
+
+In practice, your compliance team will want to see the monitoring framework documented in a way that maps explicitly to fair value assessments. The evidence pack generated below satisfies both PRA governance requirements and the FCA's expectation that pricing outcomes are monitored and acted on.
+
 ### Generating the monitoring framework documentation
 
 This is a one-time document (updated when the framework changes) that describes the monitoring setup. Write it as a notebook cell that produces a formatted summary:

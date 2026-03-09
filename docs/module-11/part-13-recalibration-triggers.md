@@ -126,16 +126,19 @@ def recalibration_recommendation(
     """
     ae_ci_excludes_1 = (ae_result.ci_lower > 1.0) or (ae_result.ci_upper < 1.0)
     ae_outside_10pct = (ae_result.ratio < 0.90) or (ae_result.ratio > 1.10)
+    ae_outside_15pct = (ae_result.ratio < 0.85) or (ae_result.ratio > 1.15)
     gini_significant = (gini_result.p_value < 0.05) and (
         abs(gini_result.gini_cur - gini_result.gini_ref) >= 0.03
     )
 
     # Check how many consecutive months the CI has excluded 1.0
+    # consecutive_amber counts prior history rows (not the current month).
+    # "Two consecutive months" = current month + one prior month = consecutive_amber >= 1.
     consecutive_amber = 0
     if monitoring_log_df is not None:
         recent = (
             monitoring_log_df
-            .order_by("current_date", descending=True)
+            .sort("current_date", descending=True)
             .head(3)
         )
         for row in recent.iter_rows(named=True):
@@ -144,11 +147,13 @@ def recalibration_recommendation(
             else:
                 break
 
-    if ae_outside_10pct:
-        return {"recommendation": "RETRAIN", "reason": "A/E outside [0.90, 1.10]"}
+    if ae_outside_15pct:
+        return {"recommendation": "RETRAIN", "reason": "A/E outside [0.85, 1.15]"}
     elif gini_significant:
         return {"recommendation": "RETRAIN", "reason": "Statistically significant Gini drop"}
-    elif ae_ci_excludes_1 and consecutive_amber >= 2:
+    elif ae_outside_10pct:
+        return {"recommendation": "RECALIBRATE", "reason": "A/E outside [0.90, 1.10]"}
+    elif ae_ci_excludes_1 and consecutive_amber >= 1:
         return {"recommendation": "RECALIBRATE", "reason": "A/E CI excludes 1.0 for 2+ months"}
     elif ae_ci_excludes_1:
         return {"recommendation": "WATCH", "reason": "A/E CI excludes 1.0 - monitor next month"}

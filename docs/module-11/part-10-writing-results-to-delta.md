@@ -191,12 +191,15 @@ This is your audit trail. If a regulator asks "what did your monitoring show in 
 
 ### VACUUM and retention
 
-By default, Delta keeps all versions indefinitely. For a monitoring log, you want at least 7 years of history (broadly consistent with FCA record-keeping requirements). The default VACUUM retention is 7 days. Override it:
+By default, Delta retains the transaction log for 30 days and keeps physically deleted data files for 7 days before VACUUM removes them. For a monitoring log, you want at least 7 years of history (broadly consistent with FCA record-keeping requirements). You need to set **both** retention properties: `deletedFileRetentionDuration` controls how long data files are retained after deletion, and `logRetentionDuration` controls how long the transaction log is kept — and it is the log that enables time travel. Without setting `logRetentionDuration`, time travel fails after 30 days even if the data files are still present.
 
 ```python
 spark.sql(f"""
     ALTER TABLE {TABLES["monitoring_log"]}
-    SET TBLPROPERTIES ('delta.deletedFileRetentionDuration' = 'interval 7 years')
+    SET TBLPROPERTIES (
+        'delta.deletedFileRetentionDuration' = 'interval 7 years',
+        'delta.logRetentionDuration'         = 'interval 7 years'
+    )
 """)
 
 print("Retention policy set to 7 years.")
