@@ -19,7 +19,7 @@ from insurance_conformal import InsuranceConformalPredictor
 # Exchangeability requires that they come from the same distribution.
 # A random split violates this for insurance data because time trends
 # (inflation, mix changes, legislative effects) mean 2022 observations
-# and 2024 observations are NOT exchangeable.
+# and 2023 observations are NOT exchangeable.
 #
 # Correct approach: use the penultimate accident year as calibration
 # and the final accident year as test. Both are out-of-time relative
@@ -144,11 +144,11 @@ conf_df = pl.DataFrame({
     "policy_id":    df_te_sev["policy_id"].tolist(),
     "accident_year": df_te_sev["accident_year"].tolist(),
     "mean_sev_actual": y_te_conf.tolist(),
-    "sev_lower":    intervals["lower"].tolist(),
-    "sev_point":      intervals["point"].tolist(),
-    "sev_upper":    intervals["upper"].tolist(),
-    "rel_width":    rel_width.tolist(),
-    "referral_flag": referral_flag.tolist(),
+    "sev_lower":    intervals["lower"].to_list(),
+    "sev_point":      intervals["point"].to_list(),
+    "sev_upper":    intervals["upper"].to_list(),
+    "rel_width":    rel_width.to_list(),
+    "referral_flag": referral_flag.to_list(),
     "freq_run_id":  [freq_run_id] * len(df_te_sev),
     "sev_run_id":   [sev_run_id]  * len(df_te_sev),
     "run_date":     [RUN_DATE]    * len(df_te_sev),

@@ -19,12 +19,12 @@ from insurance_cv import WalkForwardCV, IBNRBuffer
 # Each fold trains on progressively more data and validates on the
 # next accident year.
 #
-# Fold 1: train on 2021-2022, validate on 2023
-# Fold 2: train on 2021-2023, validate on 2024
-# Fold 3: train on 2021-2023 (with IBNR buffer), validate on 2024
+# Fold 1: train on 2019-2021, validate on 2022
+# Fold 2: train on 2019-2022, validate on 2023
+# Fold 3: train on 2019-2022 (with IBNR buffer), validate on 2023
 #
 # The IBNR buffer removes the most recent 6 months from each training fold.
-# For accident year data (not monthly), this trims the 2023 H2 data from
+# For accident year data (not monthly), this trims the 2022 H2 data from
 # Fold 2's training set. In production with monthly data, it removes the
 # six most recent months from the training window.
 # -----------------------------------------------------------------------
@@ -141,7 +141,7 @@ print(f"\nMean CV deviance: {mean_cv_deviance:.5f}")
 print(f"Fold deviances:   {[round(d, 5) for d in cv_deviances]}")
 ```
 
-**What you should see:** Three fold deviances, each between roughly 0.04 and 0.09 for the synthetic data. The last fold may be higher if accident year 2024 is partially immature in the synthetic data. If any fold deviance is below 0.01, check for data leakage -- you may have future information in the training features.
+**What you should see:** Three fold deviances, each between roughly 0.04 and 0.09 for the synthetic data. The last fold may be higher if accident year 2023 is partially immature in the synthetic data. If any fold deviance is below 0.01, check for data leakage -- you may have future information in the training features.
 
 **What the IBNR buffer does in practice:** If your data is monthly (e.g., accident month rather than accident year), the six-month buffer removes the six most recent months from each fold's training set. A policy written in June 2024 would not appear in a fold that trains on data through December 2024. This forces the model to learn from claims that have had at least six months to develop, reducing IBNR contamination.
 

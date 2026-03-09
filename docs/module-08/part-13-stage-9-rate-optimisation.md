@@ -86,25 +86,10 @@ else:
                   "London": 1.38, "SouthWest": 0.86}
     f_region = np.array([region_rel.get(str(r), 1.0) for r in df_ren["region"].values])
 
-# NCB factor: from SHAP relativities (continuous feature, use quintile bins)
-ncb_deficit_shap = shap_relativities.get("ncb_deficit", {})
-if ncb_deficit_shap:
-    # Map via quintile bins -- for simplicity, map deficit 0-5 directly
-    # In production, use the quantile bin boundaries from Stage 7
-    ncb_rel_by_deficit = {
-        0: 0.65,  # no deficit = lowest risk = lowest factor
-        1: 0.78,
-        2: 0.90,
-        3: 1.05,
-        4: 1.25,
-        5: 1.55,  # full deficit = highest risk = highest factor
-    }
-    f_ncb = np.array([ncb_rel_by_deficit.get(int(d), 1.0)
-                      for d in df_ren["ncb_deficit"].values
-                      if "ncb_deficit" in df_ren.columns]
-                     ) if "ncb_deficit" in df_ren.columns else np.ones(n_renewal)
-else:
-    f_ncb = np.ones(n_renewal)
+# NCB factor: FEATURE_COLS does not include ncb_deficit in this pipeline,
+# so we default to a flat factor of 1.0. In a production model that includes
+# ncb_deficit, you would map SHAP relativities from Stage 7 here.
+f_ncb = np.ones(n_renewal)
 
 # Age factor: from age_mid (continuous -- use quintile)
 age_vals = df_ren["age_mid"].values if "age_mid" in df_ren.columns else np.full(n_renewal, 43.0)
@@ -164,7 +149,7 @@ print(result.summary())
 
 ```python
 rate_factors_df = pl.DataFrame({
-    "run_date":      [RUN_DATE],
+    "run_date":      [RUN_DATE] * 4,
     "factor":        ["f_region", "f_ncb", "f_age", "f_iat"],
     "adjustment":    [float(result.factor_adjustments.get(f, 1.0)) for f in ["f_region", "f_ncb", "f_age", "f_iat"]],
     "lr_target":     [LR_TARGET] * 4,

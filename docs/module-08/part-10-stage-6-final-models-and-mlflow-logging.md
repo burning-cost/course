@@ -1,6 +1,6 @@
 ## Part 10: Stage 6 -- Final models and MLflow logging
 
-The final models train on all data except the held-out test year. The test year is the most recent accident year in the dataset -- in this case, 2024. It is held out entirely from training and used only for final evaluation. This is separate from the CV folds, which used 2023 and 2024 for validation in different folds.
+The final models train on all data except the held-out test year. The test year is the most recent accident year in the dataset -- in this case, 2023. It is held out entirely from training and used only for final evaluation. This is separate from the CV folds, which used 2022 and 2023 for validation in different folds.
 
 Add a markdown cell:
 
@@ -149,9 +149,28 @@ df_sev_test  = df_test[df_test["claim_count"]  > 0].copy()
 df_sev_train["mean_sev"] = df_sev_train["claim_amount"] / df_sev_train["claim_count"]
 df_sev_test["mean_sev"]  = df_sev_test["claim_amount"]  / df_sev_test["claim_count"]
 
-X_sev_train = df_sev_train[FEATURE_COLS]
-y_sev_train = df_sev_train["mean_sev"].values
-w_sev_train = df_sev_train["claim_count"].values
+# -----------------------------------------------------------------------
+# Three-way temporal split for conformal calibration (Module 5 principle).
+#
+# The conformal predictor in Stage 8 requires a calibration set that is
+# out-of-sample relative to the severity model. If we trained on ALL of
+# df_sev_train (including 2022) and then calibrated on 2022, the calibration
+# residuals would reflect in-sample fit, not genuine out-of-sample error.
+# The conformal coverage guarantee would be invalid.
+#
+# Split:
+#   Train severity model on: 2019-2021 (df_sev_model)
+#   Calibrate conformal on:  2022      (extracted in Stage 8 as cal_year)
+#   Test on:                 2023      (df_sev_test / df_test)
+# -----------------------------------------------------------------------
+cal_year = sorted(df_sev_train["accident_year"].unique())[-1]   # 2022
+df_sev_model = df_sev_train[df_sev_train["accident_year"] < cal_year].copy()
+print(f"Severity model training years: {sorted(df_sev_model['accident_year'].unique())}")
+print(f"Conformal calibration year:   {cal_year}")
+
+X_sev_train = df_sev_model[FEATURE_COLS]
+y_sev_train = df_sev_model["mean_sev"].values
+w_sev_train = df_sev_model["claim_count"].values
 
 X_sev_test  = df_sev_test[FEATURE_COLS]
 y_sev_test  = df_sev_test["mean_sev"].values
@@ -168,7 +187,7 @@ sev_test_pool = Pool(
     cat_features=CAT_FEATURES,
 )
 
-print(f"Severity training: {len(df_sev_train):,} policies with claims")
+print(f"Severity training: {len(df_sev_model):,} policies with claims (excl. cal year {cal_year})")
 print(f"Severity test:     {len(df_sev_test):,} policies with claims")
 
 with mlflow.start_run(run_name="sev_model_m08") as sev_run:
@@ -181,7 +200,7 @@ with mlflow.start_run(run_name="sev_model_m08") as sev_run:
         "feat_table_version": int(feat_version),
         "feature_cols":       json.dumps(FEATURE_COLS),
         "cat_features":       json.dumps(CAT_FEATURES),
-        "train_years":        str(sorted(df_sev_train["accident_year"].unique().tolist())),
+        "train_years":        str(sorted(df_sev_model["accident_year"].unique().tolist())),
         "test_year":          str(max_year),
         "run_date":           RUN_DATE,
         "severity_target":    "mean_sev_per_claim",
@@ -195,7 +214,7 @@ with mlflow.start_run(run_name="sev_model_m08") as sev_run:
     sev_rmse = float(np.sqrt(np.mean((y_sev_test - sev_pred_test)**2)))
 
     mlflow.log_metric("test_severity_rmse",  sev_rmse)
-    mlflow.log_metric("n_sev_training_rows", len(df_sev_train))
+    mlflow.log_metric("n_sev_training_rows", len(df_sev_model))
     mlflow.log_metric("n_sev_test_rows",     len(df_sev_test))
     mlflow.catboost.log_model(sev_model, "sev_model")
     sev_run_id = sev_run.info.run_id
