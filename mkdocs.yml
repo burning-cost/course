@@ -1,0 +1,291 @@
+site_name: Burning Cost
+site_description: Modern Insurance Pricing with Python and Databricks
+site_author: Burning Cost
+site_url: https://burning-cost.github.io/course/
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - toc.integrate
+
+plugins:
+  - search:
+      lang: en
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+  - attr_list
+  - md_in_html
+
+extra:
+  generator: false
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - 'Module 1: Databricks for Pricing Teams':
+    - 'Overview': module-01/overview.md
+    - 'Part 1: What is Databricks and why should you care': module-01/part-01-what-is-databricks-and-why-should-you-care.md
+    - 'Part 2: Setting up your Free Edition account': module-01/part-02-setting-up-your-free-edition-account.md
+    - 'Part 3: Your first notebook': module-01/part-03-your-first-notebook.md
+    - 'Part 4: Working with data in Databricks': module-01/part-04-working-with-data-in-databricks.md
+    - 'Part 5: Organising your work': module-01/part-05-organising-your-work.md
+    - 'Part 6: Compute basics': module-01/part-06-compute-basics.md
+    - 'Part 7: Unity Catalog (preview)': module-01/part-07-unity-catalog-preview.md
+    - 'Exercises': module-01/exercises.md
+  - 'Module 2: GLMs in Python: The Bridge from Emblem':
+    - 'Overview': module-02/overview.md
+    - 'Part 0: Setting up your notebook': module-02/part-00-setting-up-your-notebook.md
+    - 'Part 1: The workflow we are building': module-02/part-01-the-workflow-we-are-building.md
+    - 'Part 2: Building the dataset': module-02/part-02-building-the-dataset.md
+    - 'Part 3: Factor encoding': module-02/part-03-factor-encoding.md
+    - 'Part 4: Fitting the frequency GLM': module-02/part-04-fitting-the-frequency-glm.md
+    - 'Part 5: Handling sparse factor levels': module-02/part-05-handling-sparse-factor-levels.md
+    - 'Part 6: Fitting the severity GLM': module-02/part-06-fitting-the-severity-glm.md
+    - 'Part 7: Diagnostics': module-02/part-07-diagnostics.md
+    - 'Part 8: Validating against Emblem output': module-02/part-08-validating-against-emblem-output.md
+    - 'Part 9: Exporting to Radar': module-02/part-09-exporting-to-radar.md
+    - 'Part 10: Running on Databricks - the full production pattern': module-02/part-10-running-on-databricks-the-full-production-pattern.md
+    - 'Part 11: The Tweedie model (alternative approach)': module-02/part-11-the-tweedie-model-alternative-approach.md
+    - 'Part 12: Gotchas when moving from Emblem': module-02/part-12-gotchas-when-moving-from-emblem.md
+    - 'Exercises': module-02/exercises.md
+  - 'Module 3: GBMs for Insurance Pricing: CatBoost':
+    - 'Overview': module-03/overview.md
+    - 'Part 1: Why this matters - the question about GBMs': module-03/part-01-why-this-matters-the-question-about-gbms.md
+    - 'Part 2: Setting up the notebook': module-03/part-02-setting-up-the-notebook.md
+    - 'Part 3: The exposure offset - the most important implementation detail': module-03/part-03-the-exposure-offset-the-most-important-implementation-detail.md
+    - 'Part 4: Regenerating the motor dataset': module-03/part-04-regenerating-the-motor-dataset.md
+    - 'Part 5: Feature definitions': module-03/part-05-feature-definitions.md
+    - 'Part 6: Why random cross-validation is wrong for insurance data': module-03/part-06-why-random-cross-validation-is-wrong-for-insurance-data.md
+    - 'Part 7: The CatBoost Pool object': module-03/part-07-the-catboost-pool-object.md
+    - 'Part 8: The loss function - Poisson deviance': module-03/part-08-the-loss-function-poisson-deviance.md
+    - 'Part 9: The cross-validation loop': module-03/part-09-the-cross-validation-loop.md
+    - 'Part 10: Hyperparameter tuning with Optuna': module-03/part-10-hyperparameter-tuning-with-optuna.md
+    - 'Part 11: Training the final frequency model and logging to MLflow': module-03/part-11-training-the-final-frequency-model-and-logging-to-mlflow.md
+    - 'Part 12: Feature importances': module-03/part-12-feature-importances.md
+    - 'Part 13: The severity model': module-03/part-13-the-severity-model.md
+    - 'Part 14: Comparing the GBM to the GLM': module-03/part-14-comparing-the-gbm-to-the-glm.md
+    - 'Part 15: Registering the model': module-03/part-15-registering-the-model.md
+    - 'Exercises': module-03/exercises.md
+  - 'Module 4: SHAP Relativities: From GBM to Rating Factor Tables':
+    - 'Overview': module-04/overview.md
+    - 'Part 1: What SHAP values are and why they work for relativities': module-04/part-01-what-shap-values-are-and-why-they-work-for-relativities.md
+    - 'Part 2: Setting up the notebook': module-04/part-02-setting-up-the-notebook.md
+    - 'Part 3: Recreating the training data': module-04/part-03-recreating-the-training-data.md
+    - 'Part 4: Training the CatBoost frequency model': module-04/part-04-training-the-catboost-frequency-model.md
+    - 'Part 5: Extracting SHAP values': module-04/part-05-extracting-shap-values.md
+    - 'Part 6: Validating before you trust anything': module-04/part-06-validating-before-you-trust-anything.md
+    - 'Part 7: Extracting categorical relativities': module-04/part-07-extracting-categorical-relativities.md
+    - 'Part 8: Understanding normalise_to': module-04/part-08-understanding-normaliseto.md
+    - 'Part 9: Extracting continuous feature curves': module-04/part-09-extracting-continuous-feature-curves.md
+    - 'Part 10: Producing banded factor tables': module-04/part-10-producing-banded-factor-tables.md
+    - 'Part 11: Comparing to the GLM': module-04/part-11-comparing-to-the-glm.md
+    - 'Part 12: Plotting for committee presentation': module-04/part-12-plotting-for-committee-presentation.md
+    - 'Part 13: Protected characteristics and proxy discrimination': module-04/part-13-protected-characteristics-and-proxy-discrimination.md
+    - 'Part 14: Exporting for Radar': module-04/part-14-exporting-for-radar.md
+    - 'Part 15: Adding the banded age table to the export': module-04/part-15-adding-the-banded-age-table-to-the-export.md
+    - 'Part 16: Logging to MLflow': module-04/part-16-logging-to-mlflow.md
+    - 'Part 17: Writing relativities to Unity Catalog': module-04/part-17-writing-relativities-to-unity-catalog.md
+    - 'Part 18: Limitations to document': module-04/part-18-limitations-to-document.md
+    - 'Exercises': module-04/exercises.md
+  - 'Module 5: Conformal Prediction Intervals':
+    - 'Overview': module-05/overview.md
+    - 'Part 1: Why uncertainty matters - the actuarial argument': module-05/part-01-why-uncertainty-matters-the-actuarial-argument.md
+    - 'Part 2: What conformal prediction guarantees - the theory in plain English': module-05/part-02-what-conformal-prediction-guarantees-the-theory-in-plain-eng.md
+    - 'Part 3: Setting up the notebook': module-05/part-03-setting-up-the-notebook.md
+    - 'Part 4: Building the synthetic motor dataset': module-05/part-04-building-the-synthetic-motor-dataset.md
+    - 'Part 5: The three-way temporal split': module-05/part-05-the-three-way-temporal-split.md
+    - 'Part 6: Choosing the Tweedie power and fitting the base model': module-05/part-06-choosing-the-tweedie-power-and-fitting-the-base-model.md
+    - 'Part 7: The non-conformity score - why raw residuals fail for insurance': module-05/part-07-the-non-conformity-score-why-raw-residuals-fail-for-insuranc.md
+    - 'Part 8: Calibrating the conformal predictor': module-05/part-08-calibrating-the-conformal-predictor.md
+    - 'Part 9: Generating and interpreting prediction intervals': module-05/part-09-generating-and-interpreting-prediction-intervals.md
+    - 'Part 10: The coverage diagnostic - the gate you must pass before using intervals': module-05/part-10-the-coverage-diagnostic-the-gate-you-must-pass-before-using.md
+    - 'Part 11: Application 1 - Flagging uncertain risks for underwriting referral': module-05/part-11-application-1-flagging-uncertain-risks-for-underwriting-refe.md
+    - 'Part 12: Application 2 - Risk-specific minimum premium floors': module-05/part-12-application-2-risk-specific-minimum-premium-floors.md
+    - 'Part 13: Application 3 - Portfolio reserve range estimates': module-05/part-13-application-3-portfolio-reserve-range-estimates.md
+    - 'Part 14: Recalibration - the key operational advantage': module-05/part-14-recalibration-the-key-operational-advantage.md
+    - 'Part 15: Writing results to Unity Catalog': module-05/part-15-writing-results-to-unity-catalog.md
+    - 'Part 16: Limitations for regulatory presentation': module-05/part-16-limitations-for-regulatory-presentation.md
+    - 'Part 17: Checkpoint - verify the complete notebook': module-05/part-17-checkpoint-verify-the-complete-notebook.md
+    - 'Exercises': module-05/exercises.md
+  - 'Module 6: Credibility and Bayesian Pricing: The Thin-Cell Problem':
+    - 'Overview': module-06/overview.md
+    - 'Part 1: The problem you are solving': module-06/part-01-the-problem-you-are-solving.md
+    - 'Part 2: Setting up your Databricks notebook': module-06/part-02-setting-up-your-databricks-notebook.md
+    - 'Part 3: Generating synthetic motor data': module-06/part-03-generating-synthetic-motor-data.md
+    - 'Part 4: Bühlmann-Straub credibility — the maths and the code': module-06/part-04-bhlmann-straub-credibility-the-maths-and-the-code.md
+    - 'Part 5: The shrinkage plot': module-06/part-05-the-shrinkage-plot.md
+    - 'Part 6: The bridge to Bayesian — what Bühlmann-Straub assumes': module-06/part-06-the-bridge-to-bayesian-what-bhlmann-straub-assumes.md
+    - 'Part 7: Bayesian hierarchical models with PyMC': module-06/part-07-bayesian-hierarchical-models-with-pymc.md
+    - 'Part 8: Convergence diagnostics — do not skip this': module-06/part-08-convergence-diagnostics-do-not-skip-this.md
+    - 'Part 9: Extracting posterior estimates': module-06/part-09-extracting-posterior-estimates.md
+    - 'Part 10: The shrinkage plot — Bayesian version': module-06/part-10-the-shrinkage-plot-bayesian-version.md
+    - 'Part 11: Applying B-S to model residuals (the correct workflow)': module-06/part-11-applying-b-s-to-model-residuals-the-correct-workflow.md
+    - 'Part 12: Applying B-S in log-rate space — why it matters': module-06/part-12-applying-b-s-in-log-rate-space-why-it-matters.md
+    - 'Part 13: Structural parameter stationarity': module-06/part-13-structural-parameter-stationarity.md
+    - 'Part 14: When to use which method — the decision framework': module-06/part-14-when-to-use-which-method-the-decision-framework.md
+    - 'Part 15: Databricks deployment': module-06/part-15-databricks-deployment.md
+    - 'Part 16: Limitations — for regulatory documentation': module-06/part-16-limitations-for-regulatory-documentation.md
+    - 'Exercises': module-06/exercises.md
+  - 'Module 7: Constrained Rate Optimisation':
+    - 'Overview': module-07/overview.md
+    - 'Part 1: The problem in plain English': module-07/part-01-the-problem-in-plain-english.md
+    - 'Part 2: Setting up your Databricks notebook': module-07/part-02-setting-up-your-databricks-notebook.md
+    - 'Part 3: What we are optimising and why': module-07/part-03-what-we-are-optimising-and-why.md
+    - 'Part 4: The demand model': module-07/part-04-the-demand-model.md
+    - 'Part 5: Generating the synthetic portfolio (Polars, not pandas)': module-07/part-05-generating-the-synthetic-portfolio-polars-not-pandas.md
+    - 'Part 6: Wrapping the data in PolicyData and FactorStructure': module-07/part-06-wrapping-the-data-in-policydata-and-factorstructure.md
+    - 'Part 7: The four constraints in detail': module-07/part-07-the-four-constraints-in-detail.md
+    - 'Part 8: Checking feasibility before solving': module-07/part-08-checking-feasibility-before-solving.md
+    - 'Part 9: Solving the problem': module-07/part-09-solving-the-problem.md
+    - 'Part 10: The efficient frontier': module-07/part-10-the-efficient-frontier.md
+    - 'Part 11: Translating adjustments into factor tables': module-07/part-11-translating-adjustments-into-factor-tables.md
+    - 'Part 12: Cross-subsidy and consumer impact analysis': module-07/part-12-cross-subsidy-and-consumer-impact-analysis.md
+    - 'Part 13: ENBP compliance verification': module-07/part-13-enbp-compliance-verification.md
+    - 'Part 14: Stochastic extension — chance constraints': module-07/part-14-stochastic-extension-chance-constraints.md
+    - 'Part 15: Writing results to Unity Catalog': module-07/part-15-writing-results-to-unity-catalog.md
+    - 'Part 16: Presenting results to the pricing committee': module-07/part-16-presenting-results-to-the-pricing-committee.md
+    - 'Part 17: Limitations': module-07/part-17-limitations.md
+    - 'Exercises': module-07/exercises.md
+  - 'Module 8: End-to-End Pricing Pipeline':
+    - 'Overview': module-08/overview.md
+    - 'Part 1: Why pipelines fail -- the opening scenario': module-08/part-01-why-pipelines-fail-the-opening-scenario.md
+    - 'Part 2: What makes insurance pipelines different': module-08/part-02-what-makes-insurance-pipelines-different.md
+    - 'Part 3: Setting up the Databricks notebook': module-08/part-03-setting-up-the-databricks-notebook.md
+    - 'Part 4: Pipeline architecture -- what connects to what': module-08/part-04-pipeline-architecture-what-connects-to-what.md
+    - 'Part 5: Stage 1 -- Configuration': module-08/part-05-stage-1-configuration.md
+    - 'Part 6: Stage 2 -- Data ingestion': module-08/part-06-stage-2-data-ingestion.md
+    - 'Part 7: Stage 3 -- Feature engineering': module-08/part-07-stage-3-feature-engineering.md
+    - 'Part 8: Stage 4 -- Walk-forward cross-validation': module-08/part-08-stage-4-walk-forward-cross-validation.md
+    - 'Part 9: Stage 5 -- Hyperparameter tuning with Optuna': module-08/part-09-stage-5-hyperparameter-tuning-with-optuna.md
+    - 'Part 10: Stage 6 -- Final models and MLflow logging': module-08/part-10-stage-6-final-models-and-mlflow-logging.md
+    - 'Part 11: Stage 7 -- SHAP relativities': module-08/part-11-stage-7-shap-relativities.md
+    - 'Part 12: Stage 8 -- Conformal prediction intervals': module-08/part-12-stage-8-conformal-prediction-intervals.md
+    - 'Part 13: Stage 9 -- Rate optimisation': module-08/part-13-stage-9-rate-optimisation.md
+    - 'Part 14: Stage 10 -- The pipeline audit record': module-08/part-14-stage-10-the-pipeline-audit-record.md
+    - 'Part 15: Feature consistency guards': module-08/part-15-feature-consistency-guards.md
+    - 'Part 16: Adapting the pipeline for production': module-08/part-16-adapting-the-pipeline-for-production.md
+    - 'Part 17: What this pipeline does not cover': module-08/part-17-what-this-pipeline-does-not-cover.md
+    - 'Part 18: Limitations': module-08/part-18-limitations.md
+    - 'Exercises': module-08/exercises.md
+  - 'Module 9: Demand Modelling and Price Elasticity':
+    - 'Overview': module-09/overview.md
+    - 'Part 1: Why the risk model is not enough': module-09/part-01-why-the-risk-model-is-not-enough.md
+    - 'Part 2: Setting up the notebook': module-09/part-02-setting-up-the-notebook.md
+    - 'Part 3: The confounding problem': module-09/part-03-the-confounding-problem.md
+    - 'Part 4: Generating the synthetic datasets': module-09/part-04-generating-the-synthetic-datasets.md
+    - 'Part 5: Building a conversion model': module-09/part-05-building-a-conversion-model.md
+    - 'Part 6: Building a retention model': module-09/part-06-building-a-retention-model.md
+    - 'Part 7: The near-deterministic price problem': module-09/part-07-the-near-deterministic-price-problem.md
+    - 'Part 8: Causal elasticity estimation with DML': module-09/part-08-causal-elasticity-estimation-with-dml.md
+    - 'Part 9: Heterogeneous elasticity with CausalForestDML': module-09/part-09-heterogeneous-elasticity-with-causalforestdml.md
+    - 'Part 10: Visualising the elasticity surface': module-09/part-10-visualising-the-elasticity-surface.md
+    - 'Part 11: Building the demand curve': module-09/part-11-building-the-demand-curve.md
+    - 'Part 12: FCA-compliant renewal pricing optimisation': module-09/part-12-fca-compliant-renewal-pricing-optimisation.md
+    - 'Part 13: FCA ENBP compliance audit': module-09/part-13-fca-enbp-compliance-audit.md
+    - 'Part 14: Connecting to the rate optimiser': module-09/part-14-connecting-to-the-rate-optimiser.md
+    - 'Part 15: Practical deployment considerations': module-09/part-15-practical-deployment-considerations.md
+    - 'Part 16: What we have not covered': module-09/part-16-what-we-have-not-covered.md
+    - 'Part 17: Summary': module-09/part-17-summary.md
+    - 'Exercises': module-09/exercises.md
+  - 'Module 10: Interaction Detection':
+    - 'Overview': module-10/overview.md
+    - 'Part 1: Why GLMs miss interactions': module-10/part-01-why-glms-miss-interactions.md
+    - 'Part 2: The CANN architecture': module-10/part-02-the-cann-architecture.md
+    - 'Part 3: Neural Interaction Detection': module-10/part-03-neural-interaction-detection.md
+    - 'Part 4: Setting up the notebook': module-10/part-04-setting-up-the-notebook.md
+    - 'Part 5: Generating the synthetic motor portfolio': module-10/part-05-generating-the-synthetic-motor-portfolio.md
+    - 'Part 6: Fitting the baseline GLM': module-10/part-06-fitting-the-baseline-glm.md
+    - 'Part 7: Understanding what the CANN is about to learn': module-10/part-07-understanding-what-the-cann-is-about-to-learn.md
+    - 'Part 8: Training the InteractionDetector': module-10/part-08-training-the-interactiondetector.md
+    - 'Part 9: Reading the NID scores': module-10/part-09-reading-the-nid-scores.md
+    - 'Part 10: The likelihood-ratio test': module-10/part-10-the-likelihood-ratio-test.md
+    - 'Part 11: Interpreting the interaction table': module-10/part-11-interpreting-the-interaction-table.md
+    - 'Part 12: Getting the suggested interactions': module-10/part-12-getting-the-suggested-interactions.md
+    - 'Part 13: Rebuilding the GLM with interactions': module-10/part-13-rebuilding-the-glm-with-interactions.md
+    - 'Part 14: SHAP interaction validation (optional)': module-10/part-14-shap-interaction-validation-optional.md
+    - 'Part 15: Logging to MLflow': module-10/part-15-logging-to-mlflow.md
+    - 'Part 16: Writing interaction results to Unity Catalog': module-10/part-16-writing-interaction-results-to-unity-catalog.md
+    - 'Part 17: Putting it together — what we have done and what comes next': module-10/part-17-putting-it-together-what-we-have-done-and-what-comes-next.md
+    - 'Exercises': module-10/exercises.md
+  - 'Module 11: Exposure Curves and ILFs':
+    - 'Overview': module-11/overview.md
+    - 'Part 1: The problem in plain English': module-11/part-01-the-problem-in-plain-english.md
+    - 'Part 2: Setting up your Databricks notebook': module-11/part-02-setting-up-your-databricks-notebook.md
+    - 'Part 3: What is a destruction rate?': module-11/part-03-what-is-a-destruction-rate.md
+    - 'Part 4: The exposure curve, defined properly': module-11/part-04-the-exposure-curve-defined-properly.md
+    - 'Part 5: The MBBEFD distribution family': module-11/part-05-the-mbbefd-distribution-family.md
+    - 'Part 6: The Swiss Re c-parameter and standard curves': module-11/part-06-the-swiss-re-c-parameter-and-standard-curves.md
+    - 'Part 7: Exploring the standard curves in code': module-11/part-07-exploring-the-standard-curves-in-code.md
+    - 'Part 8: Fitting an MBBEFD curve to claims data': module-11/part-08-fitting-an-mbbefd-curve-to-claims-data.md
+    - 'Part 9: Truncated and censored data': module-11/part-09-truncated-and-censored-data.md
+    - 'Part 10: Goodness of fit': module-11/part-10-goodness-of-fit.md
+    - 'Part 11: Building ILF tables': module-11/part-11-building-ilf-tables.md
+    - 'Part 12: Excess loss factors': module-11/part-12-excess-loss-factors.md
+    - 'Part 13: Per-risk XL treaty rating': module-11/part-13-per-risk-xl-treaty-rating.md
+    - 'Part 14: Lee diagrams': module-11/part-14-lee-diagrams.md
+    - 'Part 15: Writing fitted curves to Delta': module-11/part-15-writing-fitted-curves-to-delta.md
+    - 'Part 16: UK context -- the London market and commercial lines': module-11/part-16-uk-context-the-london-market-and-commercial-lines.md
+    - 'Part 17: What we have not covered, and honest limitations': module-11/part-17-what-we-have-not-covered-and-honest-limitations.md
+    - 'Exercises': module-11/exercises.md
+  - 'Module 12: Spatial Territory Rating':
+    - 'Overview': module-12/overview.md
+    - 'Part 1: What is wrong with Emblem postcode groups': module-12/part-01-what-is-wrong-with-emblem-postcode-groups.md
+    - 'Part 2: Spatial autocorrelation -- the concept you are exploiting': module-12/part-02-spatial-autocorrelation-the-concept-you-are-exploiting.md
+    - 'Part 3: Setting up your Databricks notebook': module-12/part-03-setting-up-your-databricks-notebook.md
+    - 'Part 4: Generating synthetic territory data': module-12/part-04-generating-synthetic-territory-data.md
+    - 'Part 5: Building the adjacency matrix': module-12/part-05-building-the-adjacency-matrix.md
+    - 'Part 6: Testing for spatial autocorrelation with Moran''s I': module-12/part-06-testing-for-spatial-autocorrelation-with-morans-i.md
+    - 'Part 7: The BYM2 model -- what it is and why': module-12/part-07-the-bym2-model-what-it-is-and-why.md
+    - 'Part 8: Fitting the BYM2 model': module-12/part-08-fitting-the-bym2-model.md
+    - 'Part 8b: Adding area-level covariates': module-12/part-8b-adding-area-level-covariates.md
+    - 'Part 9: MCMC diagnostics -- how to know it worked': module-12/part-09-mcmc-diagnostics-how-to-know-it-worked.md
+    - 'Part 10: Moran''s I post-fit -- confirming the model absorbed the spatial structure': module-12/part-10-morans-i-post-fit-confirming-the-model-absorbed-the-spatial.md
+    - 'Part 11: Extracting territory relativities': module-12/part-11-extracting-territory-relativities.md
+    - 'Part 12: Visualising territory relativities': module-12/part-12-visualising-territory-relativities.md
+    - 'Part 13: The two-stage pipeline for production use': module-12/part-13-the-two-stage-pipeline-for-production-use.md
+    - 'Part 14: Using territory factors in a rating engine': module-12/part-14-using-territory-factors-in-a-rating-engine.md
+    - 'Part 15: Real UK postcode geography': module-12/part-15-real-uk-postcode-geography.md
+    - 'Part 16: Comparing BYM2 to Emblem postcode groups': module-12/part-16-comparing-bym2-to-emblem-postcode-groups.md
+    - 'Part 17: Practical considerations and when not to use BYM2': module-12/part-17-practical-considerations-and-when-not-to-use-bym2.md
+    - 'Part 18: Summary and what comes next': module-12/part-18-summary-and-what-comes-next.md
+    - 'Exercises': module-12/exercises.md
