@@ -425,7 +425,7 @@ This is a controlled error. The purpose is to understand the failure mode — a 
 
 **Task 4.** The ENBP shadow price (if reported by the feasibility report) measures the marginal cost of the constraint per unit of objective. Compute the total dislocation cost of ENBP compliance as:
 
-```
+```sql
 ENBP cost = objective_value(with ENBP) - objective_value(without ENBP)
 ```
 
@@ -644,7 +644,7 @@ Why are the percentage changes identical for all policies? Why are the absolute 
 
 Use this template (fill in the values):
 
-```
+```python
 =============================================================
 PRICING MODEL CHANGE LOG — MOTOR RENEWAL RATE ACTION
 =============================================================

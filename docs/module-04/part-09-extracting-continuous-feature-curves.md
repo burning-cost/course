@@ -17,7 +17,7 @@ print(age_curve.head(5))
 
 You will see a DataFrame with 100 rows, one for each evaluation point along the driver age range:
 
-```
+```bash
 Age curve shape: (100, 4)
    feature_value  relativity  lower_ci  upper_ci
 0           17.0       1.834       NaN       NaN

@@ -96,7 +96,7 @@ print(result.summary())
 
 **What you should see (with the synthetic fallback):**
 
-```
+```sql
 FittingResult(g=22.4321, b=3.1847, loglik=-312.4, aic=628.8, converged=True)
 
       g      b  total_loss_prob    mean   loglik      aic       bic  n_obs method  converged

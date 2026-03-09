@@ -2,7 +2,7 @@
 
 Before writing any pipeline code, you need to understand the architecture as a whole. The following diagram shows how each stage feeds the next.
 
-```
+```bash
 Stage 1: Configuration
     |
     v

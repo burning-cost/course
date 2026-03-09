@@ -679,7 +679,7 @@ uv add "insurance-spatial[geo]" geopandas
 
 **Task 1.** Download the ONS Local Authority District boundaries for England and Wales from the ONS Open Geography Portal:
 
-```
+```sql
 https://services1.arcgis.com/ESMARspQHYMw9BZ9/arcgis/rest/services/Local_Authority_Districts_December_2023_Boundaries_UK_BFE/FeatureServer/0/query?where=1%3D1&outFields=*&f=geojson
 ```
 

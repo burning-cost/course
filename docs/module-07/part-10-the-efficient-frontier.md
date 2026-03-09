@@ -20,7 +20,7 @@ print(frontier_df[["lr_target", "expected_lr", "expected_volume",
 
 **What you should see** (abbreviated):
 
-```
+```sql
  lr_target  expected_lr  expected_volume  shadow_lr  shadow_volume  feasible
       0.68        0.680            0.951     0.2841         0.0000     True
       0.69        0.690            0.958     0.2103         0.0000     True

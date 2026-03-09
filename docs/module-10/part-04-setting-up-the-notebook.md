@@ -51,7 +51,7 @@ print("insurance-interactions version:", __import__("insurance_interactions").__
 
 You should see:
 
-```
+```bash
 insurance-interactions version: 0.1.0
 ```
 

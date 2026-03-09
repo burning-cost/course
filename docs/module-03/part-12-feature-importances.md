@@ -14,7 +14,7 @@ print(imp_df)
 
 Run this. You will see something like:
 
-```
+```sql
 shape: (5, 2)
 feature            importance
 ncd_years          35.2

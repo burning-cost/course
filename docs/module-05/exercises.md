@@ -841,7 +841,7 @@ print(f"Ratio (drift / original): {pure_prem_d.mean() / y_test.mean():.3f}")
 
 The Pearson-weighted non-conformity score is:
 
-```
+```python
 score = |y - ŷ| / ŷ^(p/2)
 ```
 

@@ -6,13 +6,13 @@ Before writing any code, we need to understand what SHAP values actually are. Th
 
 The CatBoost Poisson frequency model produces predictions in log space. For a policy `i`, the model computes:
 
-```
+```sql
 log(mu_i) = log(exposure_i) + phi(x_i)
 ```
 
 where `phi(x_i)` is the sum of all tree outputs for that observation. SHAP (specifically TreeSHAP) decomposes `phi(x_i)` into a sum of per-feature contributions plus a constant:
 
-```
+```sql
 phi(x_i) = expected_value + SHAP_1(x_i) + SHAP_2(x_i) + ... + SHAP_p(x_i)
 ```
 
@@ -24,7 +24,7 @@ This decomposition satisfies the Shapley efficiency axiom: the contributions sum
 
 Because the decomposition is additive in log space, the prediction in the original count scale factors as:
 
-```
+```sql
 mu_i = exp(expected_value) × exp(SHAP_1(x_i)) × exp(SHAP_2(x_i)) × ... × exp(SHAP_p(x_i))
 ```
 
@@ -34,7 +34,7 @@ For a categorical feature like `area`, every observation in area B has a SHAP va
 
 The relativity for area B relative to area A is:
 
-```
+```sql
 relativity(B vs A) = exp(mean_SHAP(area=B) - mean_SHAP(area=A))
 ```
 
@@ -44,13 +44,13 @@ where the mean is exposure-weighted across all observations at each level. This 
 
 The central limit theorem gives us standard errors on the mean SHAP values within each level:
 
-```
+```bash
 SE(level k) = shap_std(k) / sqrt(n_obs(k))
 ```
 
 The 95% confidence interval on the relativity for level `k` relative to base level `0` is:
 
-```
+```bash
 CI = exp( (mean_SHAP(k) - mean_SHAP(0)) ± 1.96 × sqrt(SE(k)^2 + SE(0)^2) )
 ```
 

@@ -27,7 +27,7 @@ print(df_quotes.select(["price_ratio", "log_price_ratio"]).describe())
 
 You should see something like:
 
-```
+```bash
 === Conversion dataset ===
 Shape:            (150000, 17)
 Conversion rate:  0.118

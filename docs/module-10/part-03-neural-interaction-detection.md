@@ -12,7 +12,7 @@ Genuine interaction requires both features to have non-negligible weights into t
 
 For a pair of features (i, j), the NID score is:
 
-```
+```sql
 d(i, j) = Σ_s  z_s × min(|W1[s,i]|, |W1[s,j]|)
 ```
 

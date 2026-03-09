@@ -6,7 +6,7 @@ Before writing any optimisation code, you need to understand the three elements 
 
 Your rating system produces a premium by multiplying a base rate by a series of factors:
 
-```
+```python
 premium = base_rate x age_factor x ncb_factor x vehicle_factor x region_factor x tenure_discount
 ```
 
@@ -44,7 +44,7 @@ The principle is minimum dislocation: choose the rate action that achieves the t
 
 Mathematically, the objective function is the sum of squared deviations of the multipliers from 1.0:
 
-```
+```sql
 minimise:  sum_k (m_k - 1)^2
 ```
 
@@ -64,7 +64,7 @@ The constraints are the conditions the factor vector **m** must satisfy. There a
 
 **Constraint 1: Loss ratio target.** The expected portfolio loss ratio at the new rates must be at or below the target:
 
-```
+```sql
 E[LR(m)] <= LR_target
 ```
 
@@ -72,7 +72,7 @@ The expected LR is not simply the current LR divided by the average rate change,
 
 **Constraint 2: Volume floor.** The expected volume retained at the new rates must be at or above the floor:
 
-```
+```sql
 E[volume(m)] >= volume_floor
 ```
 
@@ -82,7 +82,7 @@ Volume is measured as expected retained premium at new rates divided by expected
 
 **Constraint 4: Factor movement caps.** Each adjustment m\_k must lie within the range approved by the underwriting committee. If the caps are 90% to 115%, then:
 
-```
+```sql
 0.90 <= m_k <= 1.15  for all k
 ```
 

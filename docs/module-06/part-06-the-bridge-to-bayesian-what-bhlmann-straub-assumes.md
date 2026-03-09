@@ -6,14 +6,14 @@ Bühlmann-Straub is an empirical Bayes method. This is rarely stated clearly in 
 
 The credibility premium P_i is exactly the posterior mean of this Bayesian model:
 
-```
+```sql
 X_{ij} | theta_i  ~  Normal(theta_i,  v / w_{ij})    [observation model]
 theta_i            ~  Normal(mu, a)                    [prior on group mean]
 ```
 
 The posterior mean of theta_i is:
 
-```
+```sql
 E[theta_i | data] = Z_i × X̄_i + (1 - Z_i) × mu
 ```
 

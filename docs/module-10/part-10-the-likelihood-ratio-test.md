@@ -6,7 +6,7 @@ The NID gives us a ranked shortlist. The likelihood-ratio test tells us which ca
 
 For each candidate pair (i, j), we refit the GLM with an interaction term added and compute the change in deviance:
 
-```
+```bash
 Δdeviance = deviance(base GLM) - deviance(GLM + interaction)
 ```
 
@@ -26,7 +26,7 @@ A 6-level age band interacting with a 5-level vehicle group band has `5 × 4 = 2
 
 We are testing 15 pairs simultaneously. If we use a naive p-value threshold of 0.05, we expect 0.05 × 15 = 0.75 false positives by chance alone. Bonferroni correction divides the threshold by the number of tests:
 
-```
+```bash
 threshold = 0.05 / 15 = 0.0033
 ```
 

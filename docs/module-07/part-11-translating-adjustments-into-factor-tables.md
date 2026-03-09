@@ -45,7 +45,7 @@ for fname, tbl in current_tables.items():
 
 **What you should see for f\_age:**
 
-```
+```sql
 f_age  (adjustment 1.0368 = +3.7%):
 
 band    current_relativity  new_relativity  pct_change

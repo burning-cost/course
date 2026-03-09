@@ -116,7 +116,7 @@ print(f"  {lr:.4f}  (target: 0.72)")
 
 **What you should see:**
 
-```
+```text
 Portfolio: 5,000 policies
 Renewals:  3,250 (65%)
 PCW:       2,950

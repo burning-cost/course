@@ -73,7 +73,7 @@ print(band_rels.select(["age_band", "relativity", "n_obs", "total_exposure"]).so
 
 You will see:
 
-```
+```sql
 Age band relativities (base: 30-39):
 shape: (7, 4)
 ┌─────────┬────────────┬───────┬────────────────┐

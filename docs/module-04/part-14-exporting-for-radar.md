@@ -2,7 +2,7 @@
 
 Radar (Willis Towers Watson's pricing software) expects factor tables in a specific CSV format:
 
-```
+```python
 Factor,Level,Relativity
 area,A,1.0000
 area,B,1.1080
@@ -35,7 +35,7 @@ to_radar_csv(cat_rels_for_export, "/dbfs/tmp/gbm_relativities_radar.csv")
 
 You will see:
 
-```
+```sql
 Written 8 rows to /dbfs/tmp/gbm_relativities_radar.csv
 ```
 

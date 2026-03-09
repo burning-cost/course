@@ -20,7 +20,7 @@ The libraries we need for this module are not all pre-installed on Databricks. I
 
 You will see a long stream of output as pip downloads and installs each package. Wait for it to finish completely. At the end you will see:
 
-```
+```sql
 Note: you may need to restart the Python kernel to use updated packages.
 ```
 

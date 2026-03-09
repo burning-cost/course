@@ -36,7 +36,7 @@ print(f"Policies flagged for review: {flag_for_review.sum():,} ({100*flag_for_re
 
 **What you should see:**
 
-```
+```python
 Relative width threshold (90th percentile): x.xxxx
 Policies flagged for review: 2,xxx (10.0%)
 ```

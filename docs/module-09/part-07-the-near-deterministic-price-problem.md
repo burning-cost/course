@@ -31,7 +31,7 @@ print(report.summary())
 
 On the synthetic dataset (which was generated with `price_variation_sd=0.08`), you should see a variation fraction well above the 10% threshold and `weak_treatment=False`. The output looks like:
 
-```
+```sql
 Treatment Variation Diagnostic
 ========================================
 N observations:          50,000

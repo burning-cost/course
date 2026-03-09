@@ -8,7 +8,7 @@ A chance constraint reformulation asks a stronger question: with 90% probability
 
 The chance constraint is:
 
-```
+```sql
 P(LR(m) <= target) >= alpha
 ```
 
@@ -18,13 +18,13 @@ To solve this using the SLSQP framework, we convert the chance constraint to a d
 
 Under the normal approximation:
 
-```
+```sql
 P(LR(m) <= target) >= alpha
 ```
 
 is equivalent to:
 
-```
+```sql
 E[LR(m)] + z_alpha * sigma[LR(m)] <= target
 ```
 

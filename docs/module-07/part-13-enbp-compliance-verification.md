@@ -40,7 +40,7 @@ else:
 
 **What you should see:**
 
-```
+```python
 ENBP compliance verification:
   Renewal policies checked: 3,250
   ENBP violations:          0

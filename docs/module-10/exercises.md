@@ -559,7 +559,7 @@ import numpy as np
 
 **Task 1.** Fit the baseline Poisson GLM using `glum.GeneralizedLinearRegressor` with all six main effects. Compute the total Poisson deviance manually using the formula:
 
-```
+```sql
 deviance = 2 * sum(exposure * (y * log(y / mu) - (y - mu)))
 ```
 
@@ -594,7 +594,7 @@ Fit a second GLM on `X_int` and compute `dev_interaction`.
 
 **Task 3.** Compute the LR test statistic and p-value:
 
-```
+```bash
 chi2 = dev_base - dev_interaction
 df   = n_cells  # (L_age - 1) * (L_vg - 1)
 p    = 1 - chi2_cdf(chi2, df=df)
@@ -606,7 +606,7 @@ How many levels does `age_band` have? How many does `vehicle_group` (banded) hav
 
 **Task 5.** Now compute `delta_aic` and `delta_bic` for this interaction:
 
-```
+```python
 aic = deviance + 2 * n_params
 bic = deviance + log(n) * n_params
 ```
@@ -756,7 +756,7 @@ Then call `build_glm_with_interactions()` with `suggested`. Print the comparison
 
 **Task 2.** The comparison table has `delta_deviance` for the joint model. Compare this to the sum of individual `delta_deviance` values from `detector_careful.glm_test_table()` for the same pairs. The joint improvement should be less than the sum of individual improvements. Compute the "overlap fraction":
 
-```
+```bash
 overlap_fraction = 1 - (joint_delta_deviance / sum_of_individual_delta_deviances)
 ```
 
@@ -950,7 +950,7 @@ mu_enhanced_test = enhanced_glm_train.predict(X_test_pd)
 
 **Task 4.** Compute the out-of-sample deviance improvement:
 
-```
+```sql
 oos_improvement_pct = (dev_base_test - dev_enhanced_test) / dev_base_test * 100
 ```
 
@@ -2059,7 +2059,7 @@ print("Scoring function: OK")
 
 **Task 3: Governance document template (paste as markdown cell):**
 
-```
+```python
 ## Model Change Documentation
 
 **Change reference:** PCM-2026-03-001

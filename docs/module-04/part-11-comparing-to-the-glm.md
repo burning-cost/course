@@ -55,7 +55,7 @@ for lvl in area_levels:
 
 You will see something like:
 
-```
+```bash
 Area   True      GLM      GBM           GBM CI
 -------------------------------------------------------
 A     1.000    1.000    1.000  [1.000, 1.000]

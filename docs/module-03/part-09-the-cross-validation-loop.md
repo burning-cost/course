@@ -46,13 +46,13 @@ print(f"Std CV deviance:  {np.std(cv_deviances):.4f}")
 
 Run this cell. It trains three CatBoost models. On Free Edition this takes 2-4 minutes. The output should look like:
 
-```
+```sql
 Fold 1 (validate [2022]): Poisson deviance = 0.1923
 Fold 2 (validate [2023]): Poisson deviance = 0.1887
 Fold 3 (validate [2024]): Poisson deviance = 0.1841
 ```
 
-```
+```sql
 Mean CV deviance: 0.1884
 Std CV deviance:  0.0034
 ```

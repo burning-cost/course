@@ -40,7 +40,7 @@ For the rest of this course, we recommend creating new notebooks inside your Rep
 
 Here is a sensible structure for a pricing project repo. You do not need to create all of this now - this is the shape to grow into.
 
-```
+```text
 motor-pricing/
     notebooks/
         01_data_preparation.py

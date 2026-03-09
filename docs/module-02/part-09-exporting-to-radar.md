@@ -2,7 +2,7 @@
 
 Willis Towers Watson Radar imports external relativity tables as CSVs. The format is:
 
-```
+```python
 Factor,Level,Relativity
 area,A,1.0000
 area,B,1.1041

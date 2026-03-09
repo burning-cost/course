@@ -6,7 +6,7 @@ In real pricing work, your data will come from a database or a file upload. Here
 
 First, create a small CSV on your local machine. Open a text editor (or use Excel and save as CSV) and create a file called `sample_policies.csv` with this content:
 
-```
+```python
 policy_ref,inception_year,exposure_years,claim_count,area_band,ncd_years,vehicle_group,driver_age
 POL00001,2023,1.0,0,B,5,15,42
 POL00002,2023,0.75,1,A,0,22,27

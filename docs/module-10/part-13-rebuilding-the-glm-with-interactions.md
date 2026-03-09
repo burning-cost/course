@@ -26,7 +26,7 @@ print(comparison)
 
 **Expected output:**
 
-```
+```python
 shape: (2, 8)
 ┌───────────────────────────┬─────────────┬──────────┬─────────────┬─────────────┬─────────────────┬───────────────────┬──────────────┐
 │ model                     ┆ deviance    ┆ n_params ┆ aic         ┆ bic         ┆ delta_deviance  ┆ delta_deviance_pct┆ n_new_params │

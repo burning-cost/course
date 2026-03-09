@@ -6,7 +6,7 @@ For a multiplicative pricing framework (Poisson log-link), the correct approach 
 
 If you apply B-S directly to rates and then convert the estimate to a log-scale relativity, you introduce a bias. The log of the expected value does not equal the expected value of the log:
 
-```
+```python
 log(Z × X̄ + (1-Z) × mu)  ≠  Z × log(X̄) + (1-Z) × log(mu)
 ```
 

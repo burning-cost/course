@@ -25,7 +25,7 @@ print(intervals_90.head(5))
 
 **What you should see:**
 
-```
+```sql
 Output columns: ['point', 'lower', 'upper']
 
 First 5 rows:

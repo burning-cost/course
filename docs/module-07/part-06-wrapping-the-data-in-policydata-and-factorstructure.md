@@ -22,7 +22,7 @@ print(f"Current LR: {data.current_loss_ratio():.4f}")
 
 **What you should see:**
 
-```
+```bash
 n_policies: 5,000
 n_renewals: 3,250 (approximately)
 channels:   ['PCW', 'direct']
@@ -51,7 +51,7 @@ print(f"renewal-only factors: {fs.renewal_factor_names}")
 
 **What you should see:**
 
-```
+```python
 n_factors:            5
 shared factors:       ['f_age', 'f_ncb', 'f_vehicle', 'f_region']
 renewal_only factors: ['f_tenure_discount']
@@ -65,7 +65,7 @@ The "same risk profile" for a new customer means the same age, NCB, vehicle, and
 
 So the new business equivalent premium is computed with all factor adjustments except the renewal-only ones:
 
-```
+```sql
 NB equivalent premium = current_premium x m_age x m_ncb x m_vehicle x m_region
 Adjusted renewal premium = current_premium x m_age x m_ncb x m_vehicle x m_region x m_tenure_discount
 ```
@@ -80,7 +80,7 @@ This means the optimiser can never increase the tenure discount factor above 1.0
 
 If you forget to put `f_tenure_discount` in `renewal_factor_names`, the library computes the NB equivalent premium using all five factors, including the tenure discount. The ENBP constraint then compares:
 
-```
+```python
 adjusted_renewal = current_premium x m_age x m_ncb x m_vehicle x m_region x m_tenure
 NB equivalent    = current_premium x m_age x m_ncb x m_vehicle x m_region x m_tenure
 ```

@@ -2,7 +2,7 @@
 
 Before we touch the maths, we need a consistent unit. Every claim in a commercial property portfolio can be expressed as a destruction rate:
 
-```
+```sql
 z = loss / MPL
 ```
 
@@ -43,7 +43,7 @@ print(claims)
 
 **Output:**
 
-```
+```python
 shape: (5, 4)
 ┌──────────┬───────────┬───────────┬──────────────────┐
 │ claim_id ┆ loss      ┆ mpl       ┆ destruction_rate │

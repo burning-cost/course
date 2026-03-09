@@ -28,7 +28,7 @@ y2 = swiss_re_curve(2.0)
 
 **Task 1.** Implement the MBBEFD exposure curve formula from scratch using numpy, without calling `dist.exposure_curve()`. Use the formula from the tutorial:
 
-```
+```sql
 G(x) = ln[A + C * b^x] / ln(g*b)
 where A = (g-1)*b / (1-b),  C = (1-g*b) / (1-b)
 ```

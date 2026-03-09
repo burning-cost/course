@@ -20,7 +20,7 @@ In the first cell of your notebook, type this and run it by pressing **Shift+Ent
 
 You will see pip installation output scrolling for 30-60 seconds. Wait for it to finish completely. The last few lines will say something like:
 
-```
+```sql
 Successfully installed insurance-conformal-0.x.x catboost-1.x.x ...
 Note: you may need to restart the Python kernel to use updated packages.
 ```
@@ -64,7 +64,7 @@ print("All imports OK")
 
 **What you should see:**
 
-```
+```bash
 Polars:   0.x.x
 MLflow:   2.x.x
 NumPy:    1.x.x

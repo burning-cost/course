@@ -28,7 +28,7 @@ print("Hello from Databricks")
 
 To run the cell, press **Shift+Enter**. The cell runs and the output appears immediately below it:
 
-```
+```sql
 Hello from Databricks
 ```
 
@@ -87,7 +87,7 @@ In a new cell, type:
 
 Run it. You will see a stream of output as pip downloads and installs Polars. At the end it says:
 
-```
+```sql
 Note: you may need to restart the Python kernel to use updated packages.
 ```
 

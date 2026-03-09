@@ -25,7 +25,7 @@ print(diag_90.to_string())
 
 **What you should see:** something like this:
 
-```
+```python
 Coverage by decile (target: 0.90)
 Decile 1 = lowest predicted premium, Decile 10 = highest predicted premium
 

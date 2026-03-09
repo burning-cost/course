@@ -28,7 +28,7 @@ On typical UK motor data, raw residual intervals achieve approximately 90% overa
 
 The `pearson_weighted` score normalises by the predicted Tweedie variance:
 
-```
+```sql
 score = |y - ŷ| / ŷ^(p/2)
 ```
 

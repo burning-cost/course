@@ -22,13 +22,13 @@ The B-S model operates on a dataset of groups (districts, schemes, vehicle class
 
 For group i with total exposure w_i, the credibility factor is:
 
-```
+```sql
 Z_i = w_i / (w_i + K)
 ```
 
 The credibility-weighted estimate is:
 
-```
+```sql
 P_i = Z_i × X̄_i + (1 - Z_i) × mu
 ```
 
@@ -46,19 +46,19 @@ For KT with 847 policy-years and K = 1,200: Z = 847 / (847 + 1200) = 0.41. KT's 
 You do not specify v and a in advance — they are estimated from the data. Here are the formulas, followed immediately by the implementation:
 
 **Grand mean:**
-```
+```sql
 mu_hat = Σ_i(w_i × X̄_i) / Σ_i(w_i)
 ```
 Weighted average of group means, weighted by exposure.
 
 **EPV (v_hat) — within-group variance:**
-```
+```sql
 v_hat = [Σ_i Σ_j w_{ij} × (X_{ij} - X̄_i)²] / Σ_i(T_i - 1)
 ```
 Sum of within-group squared deviations, weighted by exposure, divided by the total number of within-group degrees of freedom. Groups with only one period (T_i = 1) contribute zero to the numerator but would subtract 1 from the denominator — filter these out before computing v_hat.
 
 **VHM (a_hat) — between-group variance:**
-```
+```sql
 c    = Σ_i(w_i) - Σ_i(w_i²) / Σ_i(w_i)
 s²   = Σ_i w_i × (X̄_i - mu_hat)²
 a_hat = (s² - (r - 1) × v_hat) / c

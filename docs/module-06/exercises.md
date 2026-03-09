@@ -384,7 +384,7 @@ print(area_sizes.sort("n_districts").head(10))
 
 The model structure is:
 
-```
+```python
 claims_i ~ Poisson(lambda_i × exposure_i)
 log(lambda_i) = alpha + u_area[area[i]] + u_district[district[i]]
 

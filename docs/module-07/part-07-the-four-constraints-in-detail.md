@@ -43,7 +43,7 @@ This says: at the new rates, the expected portfolio loss ratio must be at or bel
 
 The calculation is more subtle than it first appears. The expected LR is:
 
-```
+```python
 E[LR(m)] = sum_i(expected_claims_i) / sum_i(expected_premium_i x renewal_prob_i(m))
 ```
 
@@ -57,7 +57,7 @@ This is why you cannot ignore the demand model when projecting LR at new rates.
 
 This says: the expected volume at new rates, measured as retained premium, must be at or above 97% of current volume.
 
-```
+```sql
 E[sum_i(premium_i(m) x renewal_prob_i(m))] >= 0.97 x E[sum_i(premium_i(current) x renewal_prob_i(current))]
 ```
 
@@ -69,7 +69,7 @@ The exercises explore the trade-off. A key insight from the efficient frontier (
 
 This enforces PS 21/5 compliance at the individual policy level. The library evaluates:
 
-```
+```sql
 for every renewal policy i in channels ["PCW", "direct"]:
     adjusted_renewal_i <= NB_equivalent_i
 ```

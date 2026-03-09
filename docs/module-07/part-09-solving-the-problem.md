@@ -20,7 +20,7 @@ for factor, m in result.factor_adjustments.items():
 
 **What you should see:**
 
-```
+```text
 Converged:         True
 Objective value:   0.006832
 Expected LR:       0.7200

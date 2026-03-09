@@ -14,7 +14,7 @@ for check_name, result in checks.items():
 
 You will see:
 
-```
+```sql
 [PASS] reconstruction: Max absolute reconstruction error: 7.4e-06.
 [PASS] feature_coverage: All features covered by SHAP.
 [PASS] sparse_levels: All factor levels have >= 30 observations.
@@ -24,7 +24,7 @@ Three checks run:
 
 **reconstruction** - the critical one. It verifies that:
 
-```
+```sql
 exp(shap_values.sum(axis=1) + expected_value) ≈ model.predict(pool)
 ```
 

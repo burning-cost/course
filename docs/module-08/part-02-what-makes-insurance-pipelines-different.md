@@ -14,7 +14,7 @@ A policy with 0.5 years of exposure and 1 claim has an observed frequency of 2.0
 
 The correct way to handle this in a Poisson regression is with a log-exposure offset. The model predicts claim count, and the log of exposure enters as a fixed term in the linear predictor:
 
-```
+```sql
 log(E[claims]) = log(exposure) + f(features)
 ```
 

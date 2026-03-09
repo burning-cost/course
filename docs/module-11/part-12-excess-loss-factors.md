@@ -2,7 +2,7 @@
 
 The excess loss factor (ELF) at an attachment point AP is the complement of the exposure curve:
 
-```
+```sql
 ELF(AP) = 1 - G(AP/MPL)
 ```
 
@@ -28,7 +28,7 @@ for ap in [250_000, 500_000, 750_000, 1_000_000, 1_500_000]:
 
 **Output:**
 
-```
+```python
 Excess Loss Factors -- Y2, MPL = £2,000,000:
   ELF(0.25m) = 0.4183  (41.8% of expected loss above this point)
   ELF(0.50m) = 0.2606  (26.1% of expected loss above this point)

@@ -20,7 +20,7 @@ print("SHAP values computed.")
 
 You will see:
 
-```
+```sql
 SHAP values computed.
 ```
 

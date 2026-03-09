@@ -106,7 +106,7 @@ print(f"Wrong (no offset):                 {pred_no_offset.sum():,.0f}  "
 
 You will see output like:
 
-```
+```sql
 Actual total claims:               4,821
 
 Correct (log-offset):              4,819  (ratio: 0.9996)
@@ -157,7 +157,7 @@ for lvl in ["A", "B", "C", "D", "E", "F"]:
 
 This takes 2-3 minutes as three sets of SHAP values are computed. The output looks like:
 
-```
+```sql
 Area    Correct    Raw exp  No offset
 ----------------------------------------
 A         1.000      1.000      1.000
@@ -315,7 +315,7 @@ for i, feat in enumerate(feat_names):
 
 You will see output like:
 
-```
+```sql
 Feature              TPD mean|SHAP|  Interv mean|SHAP|    Ratio
 -----------------------------------------------------------------
 area                        0.18432             0.18218     0.99
@@ -355,7 +355,7 @@ print(f"Coefficient of var:    {claims_pd['avg_severity'].std() / claims_pd['avg
 
 You will see something like:
 
-```
+```python
 Claims-only policies:  4,821
 Mean severity:         £2,604
 Median severity:       £2,311
@@ -411,7 +411,7 @@ print(f"Actual mean severity:    £{y_sev_pd.mean():,.0f}")
 
 You will see:
 
-```
+```python
 Severity model trained.
 Predicted mean severity: £2,612
 Actual mean severity:    £2,604
@@ -478,7 +478,7 @@ print("Module 5 covers the correct mSHAP combination.")
 
 You will see something like:
 
-```
+```python
 Area   Freq rel   Sev rel  PP rel (F×S)
 --------------------------------------------
 A         1.000      1.000         1.000

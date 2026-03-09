@@ -20,7 +20,7 @@ In the first cell, type this and run it (Shift+Enter):
 
 You will see pip output for 30-60 seconds. Wait until you see:
 
-```
+```sql
 Note: you may need to restart the Python kernel to use updated packages.
 ```
 

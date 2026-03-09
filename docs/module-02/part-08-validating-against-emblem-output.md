@@ -4,7 +4,7 @@
 
 The following function compares your Python GLM relativities to an Emblem CSV export. The Emblem CSV format is typically:
 
-```
+```bash
 Factor,Level,Relativity,SE,LowerCI,UpperCI
 ```
 

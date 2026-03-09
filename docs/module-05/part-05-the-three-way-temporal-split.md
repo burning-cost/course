@@ -61,7 +61,7 @@ print(f"Test set:         {len(X_test):,}  rows, years: {test_years.to_list()}")
 
 **What you should see:** three sets of roughly 20,000, 20,000, and 20,000 rows (they will not be exactly equal because accident years are not uniformly distributed). The years should not overlap between sets - if they do, the sort did not work.
 
-```
+```text
 Training set:     60,xxx rows, years: [2019, 2020, 2021, 2022]
 Calibration set:  20,xxx rows, years: [2022, 2023]
 Test set:         20,xxx rows, years: [2023, 2024]

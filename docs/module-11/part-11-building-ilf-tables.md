@@ -6,7 +6,7 @@ An Increased Limits Factor (ILF) expresses the additional loading required to ex
 
 The formal definition is:
 
-```
+```sql
 ILF(L, B) = G(L/MPL) / G(B/MPL)
 ```
 
@@ -39,7 +39,7 @@ print(table_y2.to_string(index=False))
 
 **What you should see:**
 
-```
+```sql
 ILF table -- Swiss Re Y2 curve:
      limit       lev    ilf  marginal_ilf
     500000  0.070781  1.000         1.000
@@ -69,7 +69,7 @@ for name, dist in all_swiss_re_curves().items():
 
 **What you should see:**
 
-```
+```sql
 ILF at £2,000,000 limit by curve:
   Y1      : ILF = 1.742
   Y2      : ILF = 2.221

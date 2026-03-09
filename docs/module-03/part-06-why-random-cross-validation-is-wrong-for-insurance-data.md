@@ -40,7 +40,7 @@ for i, (train_idx, val_idx) in enumerate(folds):
 
 Run this. You should see output like:
 
-```
+```sql
 Fold 1: train years = [2019, 2020], validate years = [2022]
 Fold 2: train years = [2019, 2020, 2021], validate years = [2023]
 Fold 3: train years = [2019, 2020, 2021, 2022], validate years = [2024]

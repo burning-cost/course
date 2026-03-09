@@ -6,13 +6,13 @@ The core idea of the CANN is to give a neural network something specific to lear
 
 The CANN (Combined Actuarial Neural Network, from Schelldorfer and Wüthrich, 2019) uses a skip connection. The GLM prediction is injected directly into the network's output in log space:
 
-```
+```sql
 log(μ_CANN) = NN(x; θ) + log(μ_GLM)
 ```
 
 Or equivalently:
 
-```
+```sql
 μ_CANN = μ_GLM × exp(NN(x; θ))
 ```
 

@@ -24,7 +24,7 @@ print(rels[rels["feature"] == "area"].to_string(index=False))
 
 You will see:
 
-```
+```sql
 Area relativities:
  feature level  relativity  lower_ci  upper_ci  mean_shap  shap_std   n_obs  exposure_weight
     area     A       1.000     1.000     1.000     -0.613     0.033    9985           7951.2

@@ -12,7 +12,7 @@ The model has two spatial components that are combined into a single territory e
 
 The full territory effect for area i is:
 
-```
+```bash
 b_i = sigma * (sqrt(rho / s) * phi_i + sqrt(1 - rho) * theta_i)
 ```
 
@@ -33,7 +33,7 @@ A rho posterior mean of 0.3 with a wide credibility interval from 0.05 to 0.65 t
 
 ### The full model specification
 
-```
+```sql
 y_i ~ Poisson(mu_i)
 log(mu_i) = log(E_i) + alpha + b_i
 

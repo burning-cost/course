@@ -46,7 +46,7 @@ print(f"Rate on line:           {result_y2['rol']:.3%}")
 
 **What you should see:**
 
-```
+```sql
 Layer: £1m xs £1m
 Curve: Swiss Re Y2
 
@@ -79,7 +79,7 @@ for name, dist in all_swiss_re_curves().items():
 
 **What you should see:**
 
-```
+```sql
 Technical rate by curve:
   Y1      : 8.203%  (ROL 0.0903%)
   Y2      : 7.094%  (ROL 0.0781%)

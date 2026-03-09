@@ -26,7 +26,7 @@ In a new cell at the top of your notebook, type this and run it (Shift+Enter):
 
 You will see a stream of output as pip downloads and installs the packages. Wait for it to finish. At the end it says something like:
 
-```
+```bash
 Note: you may need to restart the Python kernel to use updated packages.
 ```
 

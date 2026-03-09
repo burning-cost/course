@@ -17,7 +17,7 @@ The parameter g controls the total loss probability: large g means total losses 
 
 For MBBEFD(g, b) with b not equal to 1, the exposure curve has an analytic closed form:
 
-```
+```python
 G(x) = ln[(g-1)*b / (1-b) + (1-g*b) / (1-b) * b^x] / ln(g*b)
 ```
 
@@ -25,7 +25,7 @@ This looks intimidating. Let us unpack it.
 
 Define two constants:
 
-```
+```python
 A = (g-1)*b / (1-b)
 C = (1-g*b) / (1-b)
 ```
@@ -34,7 +34,7 @@ Note that A + C = 1. These constants partition the numerator: A handles the "int
 
 The formula becomes:
 
-```
+```python
 G(x) = ln[A + C * b^x] / ln(g*b)
 ```
 
@@ -61,13 +61,13 @@ print(y2.exposure_curve(0.5))   # Something between
 
 The cumulative distribution function for x in [0, 1) is:
 
-```
+```python
 F(x) = 1 - (1-b) / [(g-1)*b^(1-x) + 1 - g*b]
 ```
 
 At x = 1, F(1) = 1 (inclusive of the total-loss atom). The point mass at x = 1 is:
 
-```
+```sql
 P(X = 1) = 1/g
 ```
 
@@ -77,7 +77,7 @@ This is why g > 1 is required: if g were 1, the point mass would be 1.0 (certain
 
 When b approaches 1, the MBBEFD family degenerates to the uniform distribution on [0, 1]. In this limit:
 
-```
+```sql
 G(x) = x   (for all x in [0, 1])
 ```
 

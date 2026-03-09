@@ -6,7 +6,7 @@ Before touching any code, we need to be precise about what a GLM assumes and whe
 
 A standard Poisson frequency GLM for UK motor insurance predicts:
 
-```
+```python
 μ_i = exposure_i × exp(α + β_area × area_i + β_vg × vg_i + β_age × age_i + ...)
 ```
 
@@ -18,7 +18,7 @@ That is what the GLM predicts. The actual multiplier for that combination — if
 
 An interaction term in a GLM looks like this:
 
-```
+```sql
 μ_i = exposure_i × exp(... + β_age_vg × [age_band_i × vehicle_group_i] + ...)
 ```
 

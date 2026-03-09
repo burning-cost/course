@@ -83,7 +83,7 @@ for x in [0.10, 0.25, 0.50, 0.75, 1.00]:
 
 **What you should see:**
 
-```
+```python
 Y2 parameters:  g = 7.6906,  b = 9.0196
 Total loss prob: 0.1300  (1/g = 0.1300)
 Mean destruction rate: 0.2139

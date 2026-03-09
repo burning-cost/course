@@ -44,7 +44,7 @@ print(f"Best iteration: {freq_model.best_iteration_}")
 
 The output looks like:
 
-```
+```bash
 Model trained.
 Best iteration: 299
 ```
@@ -68,7 +68,7 @@ print(f"  Ratio (pred/actual):    {predicted_counts.sum() / y_pd.sum():.4f}")
 
 You will see:
 
-```
+```sql
 Calibration check (train set - should be near 1.0):
   Actual total claims:    4,821
   Predicted total claims: 4,819

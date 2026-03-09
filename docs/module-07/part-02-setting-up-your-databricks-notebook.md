@@ -50,7 +50,7 @@ print("rate-optimiser: imported OK")
 
 **What you should see:**
 
-```
+```bash
 NumPy:   1.26.x
 Polars:  0.20.x
 SciPy:   1.x.x

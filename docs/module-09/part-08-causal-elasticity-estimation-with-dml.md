@@ -45,7 +45,7 @@ The DML fit involves running 5-fold cross-fitting for both the outcome and treat
 
 The summary output looks like:
 
-```
+```python
    parameter  estimate  std_error  ci_lower_95  ci_upper_95 treatment          outcome  n_folds
 0  price_elasticity    -2.03       0.04        -2.11        -1.95  log_price_ratio  converted       5
 ```

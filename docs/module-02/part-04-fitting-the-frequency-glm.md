@@ -8,7 +8,7 @@ A Poisson GLM without an offset fits raw claim counts. A policy with 0.5 earned 
 
 The offset fixes this by entering the linear predictor as a term with a fixed coefficient of exactly 1:
 
-```
+```sql
 log(E[claims_i]) = log(exposure_i) + intercept + beta_area × area_i + ...
 ```
 
@@ -20,7 +20,7 @@ In statsmodels, the offset argument takes the log-exposure vector we computed ab
 
 statsmodels uses a formula syntax (from the `patsy` library) to specify the model. It looks like R:
 
-```
+```sql
 "claim_count ~ C(area) + C(ncd_years, Treatment(0)) + C(conviction_flag, Treatment(0)) + vehicle_group"
 ```
 
@@ -167,7 +167,7 @@ print(freq_rels.filter(pl.col("feature") == "area"))
 
 **What you should see:**
 
-```
+```python
 shape: (6, 7)
 ┌─────────┬───────┬─────────────────┬────────────┬──────────┬────────────┬────────────┐
 │ feature ┆ level ┆ log_relativity  ┆ relativity ┆ se       ┆ lower_ci   ┆ upper_ci   │

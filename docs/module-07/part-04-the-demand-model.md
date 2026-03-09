@@ -15,7 +15,7 @@ Without a demand model, the volume constraint is not meaningful (it is always sa
 
 The `rate-optimiser` library uses a logistic demand model. This is the workhorse specification for renewal probability in UK personal lines. The renewal probability for policy i at a price ratio p\_i (new premium divided by market premium) is:
 
-```
+```sql
 renewal_prob_i = sigmoid(intercept + price_coef * log(p_i) + tenure_coef * tenure_i)
 ```
 

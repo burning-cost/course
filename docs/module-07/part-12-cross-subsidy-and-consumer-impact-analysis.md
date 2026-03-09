@@ -6,7 +6,7 @@ Before running any cross-subsidy code, state clearly what a uniform factor actio
 
 This follows directly from the structure of the optimiser. The decision variables are multiplicative factors applied uniformly to all levels of each factor table. If all five factors increase by 3.7%, the combined multiplier for any policy is:
 
-```
+```sql
 1.0368 x 1.0368 x 1.0368 x 1.0368 x 1.0 = 1.0368^4 = 1.158
 ```
 
@@ -58,7 +58,7 @@ print(age_bands)
 
 **What you should see:**
 
-```
+```python
 Portfolio premium impact:
   Combined adjustment: 1.1512 = +15.1%
   Mean premium increase:   £72.43

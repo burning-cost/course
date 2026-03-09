@@ -6,7 +6,7 @@ You are pricing a UK motor book. Your data team has given you claims experience 
 
 KT has 847 policy-years of exposure and 11 claims over five years. The observed claim frequency is:
 
-```
+```sql
 11 / 847 = 1.30%
 ```
 

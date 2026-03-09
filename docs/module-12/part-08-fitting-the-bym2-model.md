@@ -39,7 +39,7 @@ print(f"Areas list (first 5): {result.areas[:5]}")
 
 On a Databricks cluster (typically 4--16 cores), this 100-area model takes 2--5 minutes with 4 chains of 1,000 draws each. The progress bars show separately for the tuning phase and the sampling phase. A healthy run looks like:
 
-```
+```python
 Sampling: [==========] 100% 0:04:12
 ```
 

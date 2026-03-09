@@ -6,7 +6,7 @@ Fitting a two-parameter family means searching a 2D surface for the maximum like
 
 Swiss Re solved this by defining a one-dimensional path through the (g, b) space parametrised by c:
 
-```
+```sql
 b = exp(3.1 - 0.15 * c * (1 + c))
 g = exp(c * (0.78 + 0.12 * c))
 ```
@@ -40,7 +40,7 @@ for name, dist in curves.items():
 
 **What you should see:**
 
-```
+```python
 Curve       c        g       b   P(total)   G(0.25)   G(0.50)   G(0.75)
 ----------------------------------------------------------------------
 Y1      1.5     4.22  22.1998      23.7%    0.7027    0.8560    0.9417

@@ -4,7 +4,7 @@
 
 Let Z be the destruction rate random variable. The **exposure curve** is:
 
-```
+```sql
 G(x) = E[min(Z, x)] / E[Z]
 ```
 
@@ -22,7 +22,7 @@ The concavity property is critical. It means the exposure curve always lies abov
 
 For a per-risk XL layer from attachment AP to AP + L, the fraction of expected loss that falls in the layer is:
 
-```
+```sql
 layer fraction = G(AP + L / MPL) - G(AP / MPL)
 ```
 
@@ -32,7 +32,7 @@ This formula says: the layer captures the losses between two horizontal cuts on 
 
 Multiply by the subject premium (expected total loss from the risk) to get the expected layer loss:
 
-```
+```sql
 expected layer loss = subject_premium * [G((AP+L)/MPL) - G(AP/MPL)]
 ```
 
@@ -69,7 +69,7 @@ print(f"Expected layer loss                    = £{layer_fraction * subject_pre
 
 **Output:**
 
-```
+```python
 G(AP/MPL) = G(0.250)        = 0.5817
 G((AP+L)/MPL) = G(0.500)   = 0.7394
 Layer fraction                         = 0.1577

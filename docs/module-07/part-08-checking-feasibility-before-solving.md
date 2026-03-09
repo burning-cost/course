@@ -8,7 +8,7 @@ print(opt.feasibility_report())
 
 **What you should see (at current rates, m = 1 for all factors):**
 
-```
+```python
 Feasibility report at current rates (m = 1.0 for all factors):
 
   LR constraint:      VIOLATED   current=0.750, target=0.720, gap=-0.030

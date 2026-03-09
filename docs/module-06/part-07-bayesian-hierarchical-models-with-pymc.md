@@ -4,7 +4,7 @@
 
 We will fit a Poisson hierarchical model to the district-level claim counts. The model in full:
 
-```
+```sql
 claims_i  ~  Poisson(lambda_i × exposure_i)
 log(lambda_i)  =  alpha + u_district[i]
 u_district[k]  ~  Normal(0, sigma_district)
@@ -215,7 +215,7 @@ print("Sampling complete.")
 **Run this cell and wait.** On Databricks Community Edition (single node), this takes 3-6 minutes for 120 districts. A multi-core worker cluster would be faster — see the Databricks Deployment section later in this module.
 
 **What you should see during sampling:** A progress bar like:
-```
+```sql
 Auto-assigning NUTS sampler...
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)

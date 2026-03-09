@@ -1,118 +1,65 @@
 ## Part 2: Building the dataset
 
-### What we are generating
+### What the dataset contains
 
-We need 100,000 synthetic motor policies with these attributes:
+We use a standard 100,000-policy synthetic UK motor portfolio that is shared across all modules in this course. The data comes from the `insurance-datasets` library, which generates realistic policy characteristics and claims from a known data generating process (DGP). Because the true parameters are known, you can fit GLMs and verify whether the coefficients you recover match the ground truth.
 
-- Area band (A through F, roughly corresponding to postcode area bands)
-- ABI vehicle group (1-50)
-- NCD years (0-5)
-- Driver age (17-85)
-- Conviction flag (0 or 1)
-- Earned exposure (fraction of a policy year, 0.05 to 1.0)
+The portfolio has one row per policy with these columns:
 
-For each policy we generate a claim count (from the Poisson process) and, for claimed policies, an average severity (from the Gamma process). We know the true parameters because we define them ourselves.
+- `area` — ABI area band (A through F, A being lowest risk)
+- `vehicle_group` — ABI group 1-50
+- `ncd_years` — No Claims Discount years, 0-5 (UK scale)
+- `driver_age` — 17 to 85
+- `conviction_points` — total endorsement points (0 = clean licence)
+- `annual_mileage` — estimated annual mileage
+- `exposure` — earned policy years (less than 1.0 for cancellations)
+- `claim_count` — number of claims in the period
+- `incurred` — total incurred cost (0.0 if no claims)
+
+The true DGP uses a Poisson frequency model with a log-linear predictor and a Gamma severity model. The true parameters are documented in `insurance_datasets.MOTOR_TRUE_FREQ_PARAMS` and `insurance_datasets.MOTOR_TRUE_SEV_PARAMS`.
 
 ### A new Python concept: the random number generator
 
-`np.random.default_rng(seed=42)` creates a random number generator with a fixed starting point (`seed=42`). Using the same seed every time means the synthetic data is reproducible - you and a colleague running this same notebook will get exactly the same 100,000 policies. If you change the seed, you get a different dataset with the same statistical properties.
+The `seed=42` argument to `load_motor()` fixes the random number generator. Using the same seed every time means the data is reproducible — you and a colleague running this same code will get exactly the same 100,000 policies. If you change the seed, you get a different dataset with the same statistical properties.
 
-### A new Python concept: `np.where`
+### Loading the data
 
-`np.where(condition, value_if_true, value_if_false)` applies a condition to every element of an array and returns a new array. It is the vectorised equivalent of an IF statement in Excel. When you see `np.where(area == "B", 0.10, 0)`, it returns an array where each element is 0.10 if the corresponding policy is in area B, and 0 otherwise.
+Add `insurance-datasets` to the install cell at the top of your notebook (go back and update it now if you have not already):
 
-### Generating the data
+```python
+%pip install polars statsmodels scipy matplotlib insurance-datasets
+```
 
-Create a new cell and run this. We will explain what happened immediately afterwards.
+After restarting Python, run this in a new cell:
 
 ```python
 import polars as pl
 import numpy as np
+from insurance_datasets import load_motor, MOTOR_TRUE_FREQ_PARAMS, MOTOR_TRUE_SEV_PARAMS
 
-rng = np.random.default_rng(seed=42)
-n = 100_000
+# Load the standard motor portfolio used throughout this course
+df = pl.from_pandas(load_motor(n_policies=100_000, seed=42))
 
-# Rating factors - UK motor conventions
-areas = ["A", "B", "C", "D", "E", "F"]
-area = rng.choice(areas, size=n, p=[0.10, 0.18, 0.25, 0.22, 0.15, 0.10])
-
-vehicle_group = rng.integers(1, 51, size=n)  # ABI group 1-50
-ncd_years = rng.choice([0, 1, 2, 3, 4, 5], size=n, p=[0.08, 0.07, 0.09, 0.12, 0.20, 0.44])
-driver_age = rng.integers(17, 86, size=n)
-conviction_flag = rng.binomial(1, 0.06, size=n)
-exposure = np.clip(rng.beta(8, 2, size=n), 0.05, 1.0)
-
-# True log-frequency parameters (GLM intercept + log-linear effects)
-INTERCEPT = -3.10
-TRUE_PARAMS = {
-    "area_B": 0.10, "area_C": 0.20, "area_D": 0.35,
-    "area_E": 0.50, "area_F": 0.65,
-    "vehicle_group": 0.018,   # per ABI group unit above 1
-    "ncd_years": -0.13,       # per year of NCD
-    "young_driver": 0.55,     # age < 25
-    "old_driver": 0.28,       # age > 70
-    "conviction": 0.42,
-}
-
-# Build the log expected claim rate for each policy
-log_mu = (
-    INTERCEPT
-    + np.where(area == "B", TRUE_PARAMS["area_B"], 0)
-    + np.where(area == "C", TRUE_PARAMS["area_C"], 0)
-    + np.where(area == "D", TRUE_PARAMS["area_D"], 0)
-    + np.where(area == "E", TRUE_PARAMS["area_E"], 0)
-    + np.where(area == "F", TRUE_PARAMS["area_F"], 0)
-    + TRUE_PARAMS["vehicle_group"] * (vehicle_group - 1)
-    + TRUE_PARAMS["ncd_years"] * ncd_years
-    + np.where(driver_age < 25, TRUE_PARAMS["young_driver"], 0)
-    + np.where(driver_age > 70, TRUE_PARAMS["old_driver"], 0)
-    + TRUE_PARAMS["conviction"] * conviction_flag
-    + np.log(exposure)
+# Derive a binary conviction flag (policies with any endorsement points)
+df = df.with_columns(
+    (pl.col("conviction_points") > 0).cast(pl.Int32).alias("conviction_flag")
 )
-
-freq_rate = np.exp(log_mu - np.log(exposure))  # annualised frequency
-claim_count = rng.poisson(freq_rate * exposure)
-
-# Severity DGP: Gamma with mean around £3,500, vehicle group effect only.
-# NCD reflects driver behaviour and correlates with claim frequency,
-# not individual claim size. Including NCD in the severity model would
-# capture frequency effects through the back door.
-sev_log_mu = (
-    np.log(3500)
-    + 0.012 * (vehicle_group - 1)
-)
-true_mean_sev = np.exp(sev_log_mu)
-shape_param = 4.0  # coefficient of variation = 1/sqrt(4) = 0.5
-
-has_claim = claim_count > 0
-avg_severity = np.where(
-    has_claim,
-    rng.gamma(shape_param, true_mean_sev / shape_param),
-    0.0
-)
-
-df = pl.DataFrame({
-    "policy_id": np.arange(1, n + 1),
-    "area": area,
-    "vehicle_group": vehicle_group,
-    "ncd_years": ncd_years,
-    "driver_age": driver_age,
-    "conviction_flag": conviction_flag,
-    "exposure": exposure,
-    "claim_count": claim_count,
-    "avg_severity": avg_severity,
-    "incurred": avg_severity * claim_count,
-})
 
 print(f"Portfolio: {len(df):,} policies")
-print(f"Exposure: {df['exposure'].sum():,.0f} earned years")
+print(f"Exposure: {df['exposure'].sum():,.1f} earned years")
 print(f"Claims: {df['claim_count'].sum():,} ({df['claim_count'].sum() / df['exposure'].sum():.3f}/year)")
 print(f"Total incurred: £{df['incurred'].sum() / 1e6:.1f}m")
+print()
+print("True DGP frequency parameters:")
+for k, v in MOTOR_TRUE_FREQ_PARAMS.items():
+    print(f"  {k}: {v}")
 ```
 
-**What you should see:** Four printed lines showing the portfolio summary. Roughly 88,000 earned years, around 10,000-12,000 claims, total incurred around £40-50m. The exact numbers depend on the random draws but these ranges are correct.
+**What you should see:** Around 97,000 earned years (policies run shorter than a full year due to cancellations), around 7,000-8,000 claims at roughly 7-8% frequency, and total incurred around £25-35m. The exact numbers depend on the random draws but these ranges are correct.
 
-**What the code did:** It generated 100,000 arrays of random numbers (one element per policy), calculated a log-expected-frequency for each policy using the true parameter values, drew actual claim counts from a Poisson distribution with those expected frequencies, and then drew severity amounts from a Gamma distribution for the policies that had claims. The whole thing is stored in a Polars DataFrame called `df`.
+**What load_motor() did:** It generated 100,000 policies with realistic UK motor characteristics — driver ages weighted towards the 30-60 bracket, NCD distribution reflecting a mature book, ABI vehicle groups centred around 25. It then applied the true DGP to generate claim counts (Poisson) and incurred amounts (Gamma). Exposure varies because about 8% of policies cancel mid-term.
+
+**Why we use a library instead of writing the generation ourselves:** Consistency. Every module in this course starts from the same portfolio. When Module 3 talks about what the GLM misses and the GBM finds, you are comparing models trained on the same data. When Module 5 adds conformal prediction intervals, the calibration dataset is the same portfolio. This is how a real pricing team works — one agreed dataset, multiple models built on top of it.
 
 ### A new Python concept: f-strings
 
@@ -127,7 +74,7 @@ Before fitting any model, look at the data. In a new cell:
 df.head(5)
 ```
 
-You should see a table with 10 columns and 5 rows. Look at the exposure values - they should all be between 0.05 and 1.0. The claim_count should be 0 for most rows (this is a motor book, not a high-frequency line). The avg_severity should be 0.0 for rows with no claims.
+You should see 18 columns. The `exposure` values should be mostly close to 1.0 (annual policies) with some lower values for cancellations. `claim_count` should be 0 for most rows.
 
 In the next cell:
 
@@ -136,7 +83,7 @@ In the next cell:
 df.describe()
 ```
 
-This shows count, mean, standard deviation, min, and max for each numeric column. The minimum claim_count should be 0, the minimum exposure should be around 0.05. If you see negative values in either column, something went wrong in the generation step.
+This shows count, mean, standard deviation, min, and max for each numeric column. The minimum `claim_count` should be 0, the minimum `exposure` should be above 0.0. If you see negative values in either column, something went wrong.
 
 In the next cell, check a one-way by area:
 
@@ -150,6 +97,6 @@ df.group_by("area").agg(
 ).sort("area")
 ```
 
-**What you should see:** Area A should have the lowest claim frequency (it is the base area with no uplift). Area F should have the highest, roughly 1.9x area A. This matches `exp(0.65) ≈ 1.92`, the true area F effect we defined in TRUE_PARAMS.
+**What you should see:** Area A should have the lowest claim frequency (it is the base area with no uplift). Area F should have the highest, roughly 1.9x area A. This matches `exp(0.65) ≈ 1.92`, the true area F effect from `MOTOR_TRUE_FREQ_PARAMS`.
 
 **A new Python concept: method chaining.** Polars lets you chain operations with `.`. Each method returns a new DataFrame, so you can chain `.group_by()`, `.agg()`, `.with_columns()`, `.sort()` one after another. This is the same idea as Excel's CTRL+T tables with multiple computed columns, but written in a chain rather than spread across cells.

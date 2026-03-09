@@ -56,7 +56,7 @@ print("ArviZ:", az.__version__)
 **Run this cell.** It takes about 30-60 seconds on first run because PyMC compiles PyTensor computation graphs on import.
 
 **What you should see:**
-```
+```sql
 NumPy: 1.26.x
 Polars: 0.20.x
 PyMC: 5.x.x

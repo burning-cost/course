@@ -22,7 +22,7 @@ print(f"Scaling factor:  {adj.scaling_factor:.4f}")
 
 **What you should see:**
 
-```
+```bash
 Areas (N):       100
 Total edges:     180
 Mean neighbours: 3.60

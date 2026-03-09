@@ -336,7 +336,7 @@ For each, compute test RMSE and MAE. Which objective produces the best test-set 
 
 **Task 3:** Combine the frequency and severity models to produce a pure premium estimate for the test set. The formula is:
 
-```
+```sql
 pure_premium = (predicted_claim_count / exposure) * predicted_avg_severity
             = freq_rate * severity
 ```

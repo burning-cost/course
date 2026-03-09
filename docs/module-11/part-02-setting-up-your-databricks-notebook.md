@@ -61,7 +61,7 @@ print("insurance-ilf: imported OK")
 
 **What you should see:**
 
-```
+```bash
 NumPy:         1.26.x
 Polars:        0.20.x
 insurance-ilf: imported OK

@@ -35,7 +35,7 @@ print(f"  Max:    {cal_scores.max():.4f}")
 
 **What you should see:**
 
-```
+```sql
 Calibration set size: 20,xxx
 Number of calibration scores: 20,xxx
 
