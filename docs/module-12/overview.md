@@ -18,5 +18,6 @@ By the end of this module you will have:
 - Built a choropleth map of territory risk
 - Integrated territory factors into a downstream GLM as a log-offset
 - Made an informed decision about the two-stage vs. integrated pipeline
+[Download the notebook for this module](notebook.py)
 
 ---

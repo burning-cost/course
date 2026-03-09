@@ -11,6 +11,7 @@ This module covers the period after deployment: how you know the model is still 
 A model trained on 2022-2023 data encodes the relationships that existed in that world. That world changes. Drivers age, claim patterns shift, the mix of business changes, the Ogden rate moves. The model does not automatically update itself. If you do not monitor it, you will not know it has gone stale until loss ratios tell you - and by then you have been underpricing for months.
 
 We use the `insurance-monitoring` library throughout. It provides PSI, CSI, A/E ratios with Poisson confidence intervals, Gini drift testing, and a combined `MonitoringReport` class that runs everything in one call.
+[Download the notebook for this module](notebook.py)
 
 ## Structure
 

@@ -235,6 +235,7 @@ nav:
     - 'Part 16: What we have not covered': module-09/part-16-what-we-have-not-covered.md
     - 'Part 17: Summary': module-09/part-17-summary.md
     - 'Exercises': module-09/exercises.md
+    - 'Notebook': module-09/notebook.py
   - 'Module 10: Interaction Detection':
     - 'Overview': module-10/overview.md
     - 'Part 1: Why GLMs miss interactions': module-10/part-01-why-glms-miss-interactions.md
@@ -255,6 +256,7 @@ nav:
     - 'Part 16: Writing interaction results to Unity Catalog': module-10/part-16-writing-interaction-results-to-unity-catalog.md
     - 'Part 17: Putting it together — what we have done and what comes next': module-10/part-17-putting-it-together-what-we-have-done-and-what-comes-next.md
     - 'Exercises': module-10/exercises.md
+    - 'Notebook': module-10/notebook.py
   - 'Module 11: Model Monitoring and Drift Detection':
     - 'Overview': module-11/overview.md
     - 'Part 1: Why monitoring matters': module-11/part-01-why-monitoring-matters.md
@@ -275,6 +277,7 @@ nav:
     - 'Part 16: What we have not covered': module-11/part-16-what-we-have-not-covered.md
     - 'Part 17: Summary': module-11/part-17-summary.md
     - 'Exercises': module-11/exercises.md
+    - 'Notebook': module-11/notebook.py
   - 'Module 12: Spatial Territory Rating':
     - 'Overview': module-12/overview.md
     - 'Part 1: What is wrong with Emblem postcode groups': module-12/part-01-what-is-wrong-with-emblem-postcode-groups.md
@@ -297,3 +300,4 @@ nav:
     - 'Part 17: Practical considerations and when not to use BYM2': module-12/part-17-practical-considerations-and-when-not-to-use-bym2.md
     - 'Part 18: Summary and what comes next': module-12/part-18-summary-and-what-comes-next.md
     - 'Exercises': module-12/exercises.md
+    - 'Notebook': module-12/notebook.py
