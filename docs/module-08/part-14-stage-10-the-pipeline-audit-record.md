@@ -49,6 +49,15 @@ audit_record = {
     "conformal_n_cal_claims":    int(len(df_cal_sev)),
     "conformal_min_decile_cov":  round(min_cov, 3),
 
+    # ---- Calibration (Stage 8.5) ----
+    "cal_balance_ratio":         cal_balance_ratio,
+    "cal_balance_ok":            cal_balance_ok,
+    "cal_auto_p":                cal_auto_p,
+    "cal_auto_ok":               cal_auto_ok,
+    "cal_murphy_verdict":        cal_murphy_verdict,
+    "cal_murphy_dsc_pct":        cal_murphy_dsc_pct,
+    "cal_murphy_mcb_pct":        cal_murphy_mcb_pct,
+
     # ---- Rate optimisation ----
     "lr_target":                 LR_TARGET,
     "volume_floor":              VOLUME_FLOOR,
