@@ -140,6 +140,8 @@ plt.show()
 
 **Setup.** Run this in a new notebook (or continue in your exercise-02 notebook after the `%pip install` and restart):
 
+**Data quality note:** The dataset below is intentionally imperfect. The `claim_count` and `incurred` columns are generated from independent random draws, which means some rows will have `incurred > 0` but `claim_count == 0` (and vice versa). This mimics a real data quality problem you will encounter in practice - the kind that a badly written bordereaux produces. Task 2 asks you to find and explain these inconsistencies.
+
 ```python
 import polars as pl
 import numpy as np
@@ -263,7 +265,7 @@ ORDER BY age_group
 
 2. Create a Personal Access Token on GitHub (Settings > Developer settings > Personal access tokens > Generate new token). Give it `repo` scope. Copy the token - you will not see it again after leaving the page.
 
-3. In Databricks, go to **Repos** in the left sidebar. Click **Add Repo**. Paste your repository URL. Enter your GitHub username and the Personal Access Token as the password. Create the repo.
+3. In Databricks, go to **Workspace** in the left sidebar. In the Workspace browser, click **+** > **Git folder** (or **Add Repo** on older interfaces). Paste your repository URL. Enter your GitHub username and the Personal Access Token as the password. Create the Git folder. Note: in Databricks Runtime 13+, Repos are accessed through Workspace rather than a separate sidebar item.
 
 4. Inside the repo in Databricks, create a folder called `notebooks`. Inside that, create a new notebook called `01_data_exploration`.
 

@@ -223,6 +223,8 @@ Are the differences material (more than 1%)? Why or why not?
 
 **Task 4.** For a categorical factor, Emblem creates an "Unknown" level with its own estimated relativity. Introduce 5% missing values in `area` and create an "Unknown" level for them in Polars. Fit the model with "Unknown" as an area level. What is the estimated "Unknown" relativity and its confidence interval? What are the regulatory implications of pricing "Unknown" customers?
 
+**Polars Enum gotcha:** The `area` column is typed as `pl.Enum(["A", "B", "C", "D", "E", "F"])`. Inserting the string "Unknown" into an Enum column that does not include it raises a CastError. Cast to `pl.Utf8` first before applying the when/then replacement, then re-cast to Enum with "Unknown" included in the category list.
+
 ---
 
 ### Solution - Exercise 2

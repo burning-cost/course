@@ -26,13 +26,15 @@ Create a new repository on GitHub:
 Copy the repository URL - it looks like `https://github.com/yourusername/databricks-pricing-practice.git`.
 
 Back in Databricks:
-1. Click **Repos** in the left sidebar
-2. Click **Add Repo** (or **+** > **Repo**)
+1. Click **Workspace** in the left sidebar
+2. In the Workspace browser, look for a **Git** button or click **+** > **Git folder** (or **Add Repo** on older interfaces)
 3. Paste the GitHub URL
 4. Databricks will ask for your GitHub credentials - use a Personal Access Token, not your password. To create one: GitHub > Settings > Developer settings > Personal access tokens > Tokens (classic) > Generate new token. Give it `repo` scope. Copy the token and paste it into Databricks.
-5. Click **Create Repo**
+5. Click **Create Git folder** (or **Create Repo**)
 
-Databricks clones the repository. You will see its contents appear in the Repos panel. You can now create notebooks inside this repo, edit them, and commit the changes back to GitHub.
+**Note on navigation:** In Databricks Runtime 13+, the dedicated **Repos** sidebar icon was merged into **Workspace**. Your Git-backed repos appear in the Workspace browser under a "Repos" folder. The functionality is identical - the entry point just moved.
+
+Databricks clones the repository. You will see its contents appear in the Workspace/Repos panel. You can now create notebooks inside this repo, edit them, and commit the changes back to GitHub.
 
 For the rest of this course, we recommend creating new notebooks inside your Repo rather than in the Workspace. It gives you a safety net and is the professional habit to build.
 

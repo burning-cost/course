@@ -13,8 +13,8 @@ import statsmodels.api as sm
 df_glm_train = df_train_final.to_pandas()
 df_glm_test  = df_test_final.to_pandas()
 
-df_glm_train["log_exposure"] = np.log(df_glm_train["exposure_years"].clip(lower=1e-6))
-df_glm_test["log_exposure"]  = np.log(df_glm_test["exposure_years"].clip(lower=1e-6))
+df_glm_train["log_exposure"] = np.log(df_glm_train["exposure"].clip(lower=1e-6))
+df_glm_test["log_exposure"]  = np.log(df_glm_test["exposure"].clip(lower=1e-6))
 
 # Convert conviction_points to string so statsmodels treats it as categorical
 df_glm_train["conviction_points"] = df_glm_train["conviction_points"].astype(str)

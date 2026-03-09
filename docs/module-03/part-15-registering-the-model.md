@@ -43,7 +43,7 @@ print(f"Registered: {MODEL_NAME} version {registered.version} as 'challenger'")
 model = mlflow.catboost.load_model("models:/motor_freq_catboost_m03@challenger")
 ```
 
-This is how Module 4 will load the model for SHAP extraction without needing to retrain it.
+Module 4 retrains its own model with a slightly different feature set (using `has_convictions` instead of `conviction_points`, and adding `annual_mileage`), so it does not load this registered model directly. However, this same loading pattern is used in Module 8's production pipeline, where the registered production model is loaded by alias for scoring and monitoring.
 
 **On stage transitions vs aliases:** Do not use `client.transition_model_version_stage()`. It is deprecated in MLflow 2.9+ and generates warnings on Databricks Runtime 14.x. Use `set_registered_model_alias()` instead, as shown above.
 

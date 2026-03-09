@@ -154,6 +154,10 @@ def extract_freq_relativities(glm_result, base_levels: dict) -> pl.DataFrame:
         })
 
     return pl.concat([pl.DataFrame(base_rows), rels]).sort(["feature", "level"])
+    # Note: .sort(["feature", "level"]) sorts lexicographically on the string "level" column.
+    # For factors with numeric levels above 9, this produces wrong order: "10" sorts before "2".
+    # If your factor has levels 0-9 only, string sort is fine. For NCD years 0-10+, cast level
+    # to Int32 before sorting, or sort after converting to the display format you need.
 
 
 freq_rels = extract_freq_relativities(

@@ -4,6 +4,8 @@ Continuous features - `ncd_years`, `vehicle_group`, and `driver_age` - cannot be
 
 In a new cell, type this and run it (Shift+Enter):
 
+**What LOESS is:** LOESS (locally estimated scatterplot smoothing) is a non-parametric smoothing method that fits a weighted local regression at each point along the feature's range. For a given evaluation point, it weights nearby observations more heavily and distant observations less, then fits a low-degree polynomial through those weighted points. This produces a smooth curve without imposing a global functional form - useful for driver age, where the true effect is strongly non-linear (high at both extremes, flat in the middle) and any global polynomial would force an artificially symmetric shape.
+
 ```python
 age_curve = sr.extract_continuous_curve(
     feature="driver_age",

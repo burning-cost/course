@@ -22,6 +22,8 @@ print("Area relativities:")
 print(rels[rels["feature"] == "area"].to_string(index=False))
 ```
 
+**Note on return type:** `extract_relativities()` returns a **pandas DataFrame**, not a Polars DataFrame. This is because the underlying SHAP library (which shap-relativities wraps) works with pandas and numpy natively. Methods like `.to_string(index=False)`, `.set_index("level")`, and `.copy()` used throughout this module are pandas methods - this is intentional and correct.
+
 You will see:
 
 ```sql

@@ -104,13 +104,15 @@ When this happens, you have two options:
 
 **Quasi-Poisson:** same point estimates as Poisson, but standard errors are inflated to account for overdispersion. The relativities themselves do not change - only the confidence intervals widen. Use this when you want conservative confidence intervals but do not want to change the relativities.
 
+statsmodels does not have a true quasi-Poisson family. The equivalent is to fit a Poisson GLM and then call `.fit(scale="X2")`, which re-estimates the scale parameter from the Pearson chi-squared statistic and inflates standard errors accordingly:
+
 ```python
 glm_freq_quasi = smf.glm(
     formula=freq_formula,
     data=df_pd,
-    family=sm.families.quasi.Quasipoisson(link=sm.families.links.Log()),
+    family=sm.families.Poisson(link=sm.families.links.Log()),
     offset=df_pd["log_exposure"],
-).fit()
+).fit(scale="X2")
 
 print(f"Quasi-Poisson dispersion estimate: {glm_freq_quasi.scale:.3f}")
 print("(If > 1.0, the data is overdispersed relative to Poisson)")

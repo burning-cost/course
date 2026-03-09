@@ -24,8 +24,8 @@ correlation = np.corrcoef(area_shap, dep_score)[0, 1]
 print(f"Correlation between area SHAP values and deprivation proxy: {correlation:.3f}")
 
 if abs(correlation) > 0.5:
-    print("WARNING: High correlation suggests area may be acting as a deprivation proxy.")
-    print("Discuss with compliance before using these relativities.")
+    print("Correlation above 0.5 - review with compliance before using these relativities.")
+    print("This threshold is illustrative: agree your own threshold with your compliance function.")
 else:
     print("Correlation is modest. Document this check in your model governance file.")
 ```
@@ -33,3 +33,5 @@ else:
 You will see a correlation of around 0.55-0.65. In this synthetic example, area and deprivation are by construction correlated - we built the data that way. In a real portfolio, you would use actual deprivation indices (e.g. the Index of Multiple Deprivation) matched to postcode.
 
 **What to do with this result:** A high correlation does not automatically disqualify the feature. Area is a legitimate risk factor in UK motor (urban areas have higher claim frequency due to traffic density, not due to poverty). But you need to document the check, document the justification, and be prepared to discuss it with the FCA if asked. The Consumer Duty requires evidence that your pricing is fair; SHAP gives you the evidence layer.
+
+The 0.5 threshold in the code above is illustrative. There is no industry-standard cutoff. Agree your threshold with your compliance function before running this check in production — what counts as "high" depends on the feature, the protected characteristic being proxied, and your firm's risk appetite.

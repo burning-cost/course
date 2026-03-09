@@ -11,7 +11,7 @@ CAT_FEATURES        = ["area", "conviction_points"]
 FEATURES            = CONTINUOUS_FEATURES + CAT_FEATURES
 
 FREQ_TARGET  = "claim_count"
-EXPOSURE_COL = "exposure_years"
+EXPOSURE_COL = "exposure"
 SEV_TARGET   = "incurred"
 ```
 

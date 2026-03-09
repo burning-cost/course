@@ -12,9 +12,12 @@ missing_report = df.null_count()
 print(missing_report)
 
 # Options:
-# 1. Impute with the mean or mode for continuous variables
+# 1. Impute with the mean for continuous variables
+#    Note: Polars' fill_null(strategy="mean") is not supported on Int32 columns.
+#    Compute the mean first, then fill.
+vg_mean = int(df["vehicle_group"].mean())
 df = df.with_columns(
-    pl.col("vehicle_group").fill_null(strategy="mean").cast(pl.Int32)
+    pl.col("vehicle_group").fill_null(vg_mean).cast(pl.Int32)
 )
 
 # 2. Create an "Unknown" level for categorical factors
@@ -81,4 +84,4 @@ The model is the easy part.
 
 **Module 3: Gradient Boosted Models with CatBoost** - replaces the GLM frequency model with a CatBoost model. Covers hyperparameter tuning, cross-validation designed for insurance data, and model comparison against the GLM benchmark from this module.
 
-**Module 4: Validation and Monitoring** - builds the monitoring infrastructure to track model performance month by month, detect drift, and generate the FCA evidence pack automatically.
+**Module 4: SHAP Relativities** - extracts multiplicative factor tables from the GBM using SHAP values. Produces the same format as the GLM relativities above, so the pricing committee can read and approve them.

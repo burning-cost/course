@@ -14,13 +14,15 @@ Once verified, you will be asked to choose a cloud provider: AWS, Azure, or Goog
 
 After logging in you land on the Databricks home screen. It looks like this:
 
-- **Left sidebar** - the main navigation. The icons from top to bottom are: Home, Workspace, Repos, Data, Compute, Workflows, and Settings. We will use most of these.
+- **Left sidebar** - the main navigation. The icons from top to bottom are: Home, Workspace, Data, Compute, Workflows, and Settings. We will use most of these.
 - **Central panel** - this changes depending on what you have selected in the sidebar. On first login it shows a "Get started" panel with shortcuts to create a notebook, import data, and so on.
 - **Top bar** - your username, a help icon, and a search box.
 
+**Note on the sidebar:** In Databricks Runtime 13 and later (including all current Free Edition workspaces), the **Repos** item no longer appears as a separate sidebar entry. Git-backed notebooks are now accessed through **Workspace** - look for the Git folder icon or use the Workspace browser to navigate to your repos. Part 5 covers this in detail.
+
 The most important things to understand at this stage:
 
-**Workspace** is where your notebooks live. Think of it like a folder structure in File Explorer, but in the cloud. When you create a notebook, it goes into your Workspace.
+**Workspace** is where your notebooks live. Think of it like a folder structure in File Explorer, but in the cloud. When you create a notebook, it goes into your Workspace. Git-backed repos also live here, accessible via the Workspace browser.
 
 **Compute** is where you manage clusters - the actual computers that run your code. Without a running cluster, notebooks cannot execute. We will cover this properly in Part 6.
 

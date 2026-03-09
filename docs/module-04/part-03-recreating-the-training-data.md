@@ -23,7 +23,7 @@ import numpy as np
 # Same portfolio used in Modules 2 and 3
 df = pl.from_pandas(load_motor(n_policies=100_000, seed=42))
 
-# Feature engineering consistent with Module 3
+# Feature engineering for Module 4 SHAP analysis
 df = df.with_columns(
     (
         (pl.col("driver_age") < 25) & (pl.col("vehicle_group") > 35)
@@ -65,6 +65,8 @@ print(f"  CONT_FEATURES: {CONT_FEATURES}")
 
 You will see the feature list printed. No errors means the feature engineering worked.
 
-**Why `conviction_points` becomes `has_convictions`:** The raw conviction points (0, 3, 6, 9) contain ordinal information, but the most important split is clean vs. any conviction. A binary flag is simpler and more interpretable for committee presentation. In practice you would test both encodings.
+**Why the feature set differs from Module 3:** Module 3 uses `conviction_points` as a categorical feature with four levels (0, 3, 6, 9). Module 4 uses `has_convictions` (binary: any conviction or none) instead. The binary flag is simpler to present in SHAP factor tables — a two-row table (0 and 1) is cleaner for a pricing committee than a four-row table where three of the four levels have sparse data. In practice you would test both encodings; for SHAP extraction the binary flag is preferable.
 
-**Why annual_mileage is included here but not in Module 2:** The GLM in Module 2 uses a minimal factor set to demonstrate the GLM workflow clearly. The GBM in Module 3 and SHAP analysis in Module 4 benefit from richer features because the GBM can find non-linear effects and interactions across more variables. `annual_mileage` is in the base dataset from `load_motor()` and is a genuine risk factor.
+Module 4 also adds `annual_mileage`, which was not in Module 3's feature set. `annual_mileage` is in the base dataset from `load_motor()` and is a genuine risk factor. The GLM in Module 2 uses a minimal factor set to demonstrate the GLM workflow clearly; the GBM and SHAP analysis benefit from richer features because the GBM can find non-linear effects and interactions across more variables.
+
+**Why `conviction_points` becomes `has_convictions`:** The raw conviction points (0, 3, 6, 9) contain ordinal information, but the most important split is clean vs. any conviction. A binary flag is simpler and more interpretable for committee presentation. In practice you would test both encodings.

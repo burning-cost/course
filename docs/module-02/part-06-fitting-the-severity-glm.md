@@ -10,6 +10,10 @@ Severity GLMs differ from frequency GLMs in three important ways:
 
 3. **We use claim count as a variance weight, not an exposure offset.** A policy with 3 claims gives us an average of 3 severities, which is more informative than an average of 1. The `var_weights` argument tells statsmodels to weight each observation's contribution by its claim count.
 
+**`var_weights` vs `freq_weights`:** statsmodels has two weighting arguments that are easy to confuse. `freq_weights` treats each weighted observation as if it were replicated that many times — it inflates the sample size, which produces artificially small standard errors. `var_weights` scales the variance of each observation without changing the effective sample size; it is the correct choice here because we are fitting on aggregate average severity per policy, and the weight reflects precision (more claims = more precise average), not replication.
+
+** vs :** statsmodels has two weighting arguments that are easy to confuse.  treats each weighted observation as if it were replicated that many times — it inflates the sample size, which produces artificially small standard errors.  scales the variance of each observation without changing the effective sample size; it is the correct choice here because we are fitting on aggregate average severity per policy, and the weight reflects precision (more claims = more precise average), not replication.
+
 ### NCD does not belong in the severity model
 
 NCD years are excluded from the severity formula and this is a deliberate modelling decision, not an oversight.
