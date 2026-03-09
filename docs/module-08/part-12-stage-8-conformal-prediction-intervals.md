@@ -40,8 +40,8 @@ df_cal_sev = features_pd[
 ].copy()
 df_te_sev  = df_test[df_test["claim_count"] > 0].copy()
 
-df_cal_sev["mean_sev"] = df_cal_sev["incurred_loss"] / df_cal_sev["claim_count"]
-df_te_sev["mean_sev"]  = df_te_sev["incurred_loss"]  / df_te_sev["claim_count"]
+df_cal_sev["mean_sev"] = df_cal_sev["claim_amount"] / df_cal_sev["claim_count"]
+df_te_sev["mean_sev"]  = df_te_sev["claim_amount"]  / df_te_sev["claim_count"]
 
 X_cal = df_cal_sev[FEATURE_COLS]
 y_cal = df_cal_sev["mean_sev"].values
@@ -80,14 +80,14 @@ cp.calibrate(X_cal, y_cal)
 # Generate 90% prediction intervals for the test set
 intervals = cp.predict_interval(X_te_conf, alpha=CONFORMAL_ALPHA)
 
-# intervals is a DataFrame with columns: lower, mid, upper
+# intervals is a DataFrame with columns: lower, point, upper
 # lower: lower bound of the 90% interval
-# mid:   point prediction (same as sev_model.predict())
+# point: point prediction (same as sev_model.predict())
 # upper: upper bound of the 90% interval
 
 print(f"\nSeverity prediction intervals (90%, alpha={CONFORMAL_ALPHA}):")
 print(f"  Mean lower bound: £{intervals['lower'].mean():,.0f}")
-print(f"  Mean point pred:  £{intervals['mid'].mean():,.0f}")
+print(f"  Mean point pred:  £{intervals['point'].mean():,.0f}")
 print(f"  Mean upper bound: £{intervals['upper'].mean():,.0f}")
 print(f"  Mean interval width: £{(intervals['upper'] - intervals['lower']).mean():,.0f}")
 ```
@@ -102,7 +102,7 @@ min_cov = float(diag["coverage"].min())
 
 print("\nCoverage by predicted severity decile:")
 print(f"{'Decile':<8} {'Coverage':>10} {'Status':>12}")
-for _, row in diag.iterrows():
+for row in diag.iter_rows(named=True):
     status = "OK" if row["coverage"] >= 0.85 else "WARN: below 85%"
     print(f"  {row['decile']:<6} {row['coverage']:>10.3f} {status:>12}")
 
@@ -123,9 +123,9 @@ else:
 ### Flagging uncertain risks for underwriting referral
 
 ```python
-# Relative interval width = (upper - lower) / mid
+# Relative interval width = (upper - lower) / point
 # High relative width = high model uncertainty for this risk
-rel_width = (intervals["upper"] - intervals["lower"]) / (intervals["mid"] + 1e-6)
+rel_width = (intervals["upper"] - intervals["lower"]) / (intervals["point"] + 1e-6)
 
 # Flag risks in the top 10% of relative width for underwriting referral
 referral_threshold = np.percentile(rel_width, 90)
@@ -145,7 +145,7 @@ conf_df = pl.DataFrame({
     "accident_year": df_te_sev["accident_year"].tolist(),
     "mean_sev_actual": y_te_conf.tolist(),
     "sev_lower":    intervals["lower"].tolist(),
-    "sev_mid":      intervals["mid"].tolist(),
+    "sev_point":      intervals["point"].tolist(),
     "sev_upper":    intervals["upper"].tolist(),
     "rel_width":    rel_width.tolist(),
     "referral_flag": referral_flag.tolist(),

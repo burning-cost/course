@@ -9,6 +9,10 @@ CATALOG = "pricing"
 SCHEMA  = "motor"
 RUN_DATE = str(date.today())
 
+# factor_adj holds the solved multipliers (assigned in Part 13)
+# Define here in case you are running Part 15 independently
+factor_adj = result.factor_adjustments
+
 # --- Factor adjustments table ---
 adj_records = [
     {

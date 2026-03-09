@@ -20,41 +20,30 @@ import numpy as np
 import pandas as pd
 
 # Load 200,000-policy portfolio for the pipeline
-# Same DGP as Modules 2-5 — parameters, column names, and distributions are identical
+# Same DGP as Modules 2-5 — column names and distributions are identical.
+# load_motor() columns: policy_id, age, vehicle_age, vehicle_group, region,
+#                       credit_score, exposure, claim_count, claim_amount
 raw_pl = pl.from_pandas(load_motor(n_policies=200_000, seed=42))
 
-# Feature engineering consistent with earlier modules
+# Add synthetic accident years — load_motor() does not include accident_year.
+# We assign years 2019-2023 with realistic weighting to enable temporal splits.
+rng_year = np.random.default_rng(seed=42)
+accident_year = rng_year.choice([2019, 2020, 2021, 2022, 2023], size=len(raw_pl),
+                                 p=[0.14, 0.16, 0.18, 0.22, 0.30])
 raw_pl = raw_pl.with_columns(
-    (
-        (pl.col("driver_age") < 25) & (pl.col("vehicle_group") > 35)
-    ).cast(pl.Int32).alias("young_high_vg"),
-    (pl.col("conviction_points") > 0).cast(pl.Int32).alias("has_convictions"),
-    # Age band derived from driver_age — consistent with the banded feature approach
-    pl.when(pl.col("driver_age") < 25).then(pl.lit("17-25"))
-      .when(pl.col("driver_age") < 36).then(pl.lit("26-35"))
-      .when(pl.col("driver_age") < 51).then(pl.lit("36-50"))
-      .when(pl.col("driver_age") < 66).then(pl.lit("51-65"))
-      .otherwise(pl.lit("66+"))
-      .alias("age_band"),
-    # Mileage band derived from annual_mileage
-    pl.when(pl.col("annual_mileage") < 5_000).then(pl.lit("<5k"))
-      .when(pl.col("annual_mileage") < 10_000).then(pl.lit("5k-10k"))
-      .when(pl.col("annual_mileage") < 15_000).then(pl.lit("10k-15k"))
-      .otherwise(pl.lit("15k+"))
-      .alias("mileage_band"),
-).rename({"incurred": "incurred_loss"})
+    pl.Series("accident_year", accident_year.astype(np.int32))
+)
 
-# Sanity checks
-assert raw_pl.shape[0] == 200_000,            "Row count mismatch"
-assert raw_pl["exposure"].min() > 0,           "Zero or negative exposure"
-assert raw_pl["claim_count"].min() >= 0,       "Negative claim count"
-assert raw_pl["incurred_loss"].min() >= 0,     "Negative incurred loss"
-assert raw_pl["ncd_years"].is_between(0, 5).all(), "NCD out of range"
+# Sanity checks on the loaded data
+assert raw_pl.shape[0] == 200_000,       "Row count mismatch"
+assert raw_pl["exposure"].min() > 0,     "Zero or negative exposure"
+assert raw_pl["claim_count"].min() >= 0, "Negative claim count"
+assert raw_pl["claim_amount"].min() >= 0, "Negative claim amount"
 
-print(f"Policies generated:  {raw_pl.shape[0]:,}")
-print(f"Total claims:        {raw_pl['claim_count'].sum():,}")
-print(f"Overall claim rate:  {raw_pl['claim_count'].sum() / raw_pl['exposure'].sum():.4f} per policy-year")
-print(f"Total incurred:      £{raw_pl['incurred_loss'].sum():,.0f}")
+print(f"Policies loaded:    {raw_pl.shape[0]:,}")
+print(f"Total claims:       {raw_pl['claim_count'].sum():,}")
+print(f"Overall claim rate: {raw_pl['claim_count'].sum() / raw_pl['exposure'].sum():.4f} per policy-year")
+print(f"Total claim amount: £{raw_pl['claim_amount'].sum():,.0f}")
 
 print("\nData shape:", raw_pl.shape)
 print("\nAccident year distribution:")
@@ -67,7 +56,7 @@ print(raw_pl.group_by("accident_year").agg(
 ))
 ```
 
-**What you should see:** 200,000 policies, around 15,000 total claims (roughly 7-8% claim frequency), and total incurred in the £50-80m range. The accident year distribution spans 2019-2023 because the DGP assigns inception dates across a 5-year window.
+**What you should see:** 200,000 policies, around 15,000 total claims (roughly 7-8% claim frequency), and total claim amount in the £50-80m range. The accident year distribution spans 2019-2023.
 
 **Why 200,000 policies here:** Walk-forward cross-validation splits the data by accident year. With 5 years of data and training sets that grow from 1 to 4 years, a 200,000-policy book gives each fold enough claims to fit stable frequency and severity models. With only 100,000 policies, the early folds (1 year of training data, ~40,000 policies) would be too thin for reliable hyperparameter tuning.
 

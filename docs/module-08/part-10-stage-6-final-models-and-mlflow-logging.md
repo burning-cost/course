@@ -12,6 +12,7 @@ Add a markdown cell:
 ### Splitting train and test
 
 ```python
+import json
 import mlflow
 import mlflow.catboost
 
@@ -137,7 +138,7 @@ print(f"Table: {TABLES['freq_predictions']} (version {freq_pred_version})")
 # Severity model: Tweedie with variance_power=2 (Gamma distribution)
 #
 # Trains on policies with at least one claim only.
-# Target: mean severity per claim (incurred / claim_count).
+# Target: mean severity per claim (claim_amount / claim_count).
 # Weight: claim count (more claims = more evidence about this risk's severity).
 # No exposure offset -- we are modelling severity given a claim, not claim counts.
 # -----------------------------------------------------------------------
@@ -145,8 +146,8 @@ print(f"Table: {TABLES['freq_predictions']} (version {freq_pred_version})")
 df_sev_train = df_train[df_train["claim_count"] > 0].copy()
 df_sev_test  = df_test[df_test["claim_count"]  > 0].copy()
 
-df_sev_train["mean_sev"] = df_sev_train["incurred_loss"] / df_sev_train["claim_count"]
-df_sev_test["mean_sev"]  = df_sev_test["incurred_loss"]  / df_sev_test["claim_count"]
+df_sev_train["mean_sev"] = df_sev_train["claim_amount"] / df_sev_train["claim_count"]
+df_sev_test["mean_sev"]  = df_sev_test["claim_amount"]  / df_sev_test["claim_count"]
 
 X_sev_train = df_sev_train[FEATURE_COLS]
 y_sev_train = df_sev_train["mean_sev"].values

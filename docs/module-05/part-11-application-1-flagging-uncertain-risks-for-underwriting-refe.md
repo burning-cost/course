@@ -5,7 +5,7 @@ The conformal interval gives you two dimensions for every risk:
 1. **Risk level** - the point estimate (£342 is an expensive risk; £87 is a cheap one)
 2. **Model uncertainty** - the relative interval width ((upper - lower) / point estimate)
 
-These are independent. A risk can be expensive and well-understood (young driver with conviction points, but there are thousands in training data). A risk can be cheap and poorly understood (unusual feature combination that appears rarely in training).
+These are independent. A risk can be expensive and well-understood (young driver with high vehicle group, but there are thousands in training data). A risk can be cheap and poorly understood (unusual feature combination that appears rarely in training).
 
 Underwriting referral should be based on model uncertainty, not risk level. High-risk policies the model understands can be quoted automatically with high confidence. Uncertain policies - regardless of price - should go to a human.
 
@@ -60,20 +60,20 @@ for flag_val, label in [(True, "FLAGGED (uncertain)"), (False, "Not flagged")]:
     sub = X_test_pl.filter(pl.col("flagged") == flag_val)
     print(f"\n{label}: {len(sub):,} policies")
     print(f"  Mean point estimate:    £{sub['point_est'].mean():.2f}")
-    print(f"  Mean actual incurred:   £{sub['actual'].mean():.2f}")
-    print(f"  Mean driver age:        {sub['driver_age'].mean():.1f}")
+    print(f"  Mean actual loss cost:  £{sub['actual'].mean():.2f}")
+    print(f"  Mean age:               {sub['age'].mean():.1f}")
     print(f"  Mean vehicle group:     {sub['vehicle_group'].mean():.1f}")
-    print(f"  % with convictions:     {(sub['conviction_points'] > 0).mean() * 100:.1f}%")
+    print(f"  Mean credit score:      {sub['credit_score'].mean():.1f}")
     print(f"  Mean relative width:    {sub['rel_width'].mean():.3f}")
 ```
 
-**What you should see:** flagged risks skew towards younger drivers, higher vehicle groups, and conviction points. They are generally more expensive than unflagged risks. But the key point - which you need to explain to the underwriting director - is that flagging is based on training data density, not just risk level.
+**What you should see:** flagged risks skew towards younger drivers, higher vehicle groups, and lower credit scores. They are generally more expensive than unflagged risks. But the key point - which you need to explain to the underwriting director - is that flagging is based on training data density, not just risk level.
 
 The conversation you should be prepared to have:
 
-"Why are we flagging young drivers with conviction points? Surely we know they are high risk."
+"Why are we flagging young drivers with poor credit scores? Surely we know they are high risk."
 
-Your answer: "Yes, they are high risk and we know that well. We have thousands of such drivers in training data. But we have very few 19-year-olds with 9 conviction points in vehicle group 47. The model's prediction for that specific combination is uncertain, not the prediction for young drivers in general. We are flagging the thin-cell combinations where we genuinely lack data, not the common high-risk profiles where the model is confident."
+Your answer: "Yes, they are high risk and we know that well. We have thousands of such drivers in training data. But we have very few 19-year-olds with credit score 320 in vehicle group 47. The model's prediction for that specific combination is uncertain, not the prediction for young drivers in general. We are flagging the thin-cell combinations where we genuinely lack data, not the common high-risk profiles where the model is confident."
 
 This distinction matters for Consumer Duty. Referring risks for human review because the **model is uncertain** is a different and more defensible process than discretionary referrals based on underwriter judgment.
 

@@ -15,6 +15,8 @@ Before starting, make sure you have run all cells in the tutorial notebook and h
 
 If your cluster has timed out or restarted, re-run all tutorial cells from the top before attempting these exercises.
 
+**Note:** the  function is defined in Part 4 of the tutorial. If you are starting fresh in a new notebook, copy the full function definition from Part 4 before attempting these exercises — it is not imported from any library.
+
 ---
 
 ## Exercise 1: Bühlmann-Straub for severity data

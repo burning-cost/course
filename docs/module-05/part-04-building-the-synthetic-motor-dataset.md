@@ -20,21 +20,28 @@ import numpy as np
 df = pl.from_pandas(load_motor(n_policies=100_000, seed=42))
 
 # Feature engineering: superadditive interaction (same as Module 3)
+# load_motor() provides: age, vehicle_age, vehicle_group, region, credit_score,
+# exposure, claim_count, claim_amount
 df = df.with_columns(
     (
-        (pl.col("driver_age") < 25) & (pl.col("vehicle_group") > 35)
+        (pl.col("age") < 25) & (pl.col("vehicle_group") > 35)
     ).cast(pl.Int32).alias("young_high_vg"),
-    (pl.col("conviction_points") > 0).cast(pl.Int32).alias("has_convictions"),
 )
 
-# Assign accident years from the existing column (2019-2023)
+# Assign synthetic accident years — load_motor() does not include accident_year,
+# so we create a plausible temporal column for the three-way split below.
+rng_year = np.random.default_rng(seed=42)
+accident_year = rng_year.choice([2019, 2020, 2021, 2022, 2023], size=len(df),
+                                 p=[0.15, 0.17, 0.20, 0.23, 0.25])
+df = df.with_columns(pl.Series("accident_year", accident_year.astype(np.int32)))
+
 # Sort chronologically — essential for the temporal split below
 df = df.sort("accident_year")
 
 # Pure premium: loss cost per year of exposure
 # This is what we model with Tweedie when we want a combined frequency-severity signal
 df = df.with_columns(
-    (pl.col("incurred") / pl.col("exposure")).alias("pure_premium")
+    (pl.col("claim_amount") / pl.col("exposure")).alias("pure_premium")
 )
 
 print(f"Dataset: {len(df):,} rows")
@@ -57,6 +64,6 @@ Zero-claim rows: ~92-94%
 
 The exact numbers will match across modules because you use the same seed. If you see a `KeyError` or `NameError`, check that the cell above (the imports) ran successfully first.
 
-**What this does:** Loads 100,000 motor policies with realistic UK characteristics and a Poisson-Gamma claims DGP. The sort by `accident_year` is essential — without it, the temporal split below is meaningless. The `pure_premium` column is the ratio of incurred to exposure, which is the response variable for a Tweedie model.
+**What this does:** Loads 100,000 motor policies with realistic UK characteristics and a Poisson-Gamma claims DGP. The `load_motor()` function provides columns `policy_id`, `age`, `vehicle_age`, `vehicle_group`, `region`, `credit_score`, `exposure`, `claim_count`, and `claim_amount`. Because `accident_year` is not part of the dataset, we attach a synthetic one drawn from a realistic year distribution — this is only needed for the temporal split and does not affect the modelling. The sort by `accident_year` is then essential: without it, the temporal split is meaningless. The `pure_premium` column is the ratio of claim amount to exposure, which is the response variable for the Tweedie model.
 
 **Why the same dataset across all modules:** Conformal prediction intervals calibrated in this module will be applied to the same portfolio that the GBM was trained on in Module 3 and the SHAP relativities were extracted from in Module 4. Consistency matters: if you calibrate on a different data generating process to the one you train on, the coverage guarantees break down. Using the same library dataset eliminates this risk.

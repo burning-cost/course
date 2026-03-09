@@ -8,6 +8,9 @@ After solving, always verify ENBP compliance per-policy rather than relying sole
 
 renewal_flag_np = df["renewal_flag"].to_numpy()
 
+# factor_adj: the solved multipliers from Part 9
+factor_adj  = result.factor_adjustments
+
 adj_premium = df["current_premium"].to_numpy().copy()
 nb_equiv    = df["current_premium"].to_numpy().copy()
 

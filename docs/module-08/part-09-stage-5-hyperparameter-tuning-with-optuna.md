@@ -119,10 +119,10 @@ df_sev_tune_va = df_tune_va[df_tune_va["claim_count"] > 0].copy()
 # because a policy with 3 claims should not be 3x more influential
 # than a policy with 1 claim at the same severity.
 df_sev_tune_tr["mean_sev"] = (
-    df_sev_tune_tr["incurred_loss"] / df_sev_tune_tr["claim_count"]
+    df_sev_tune_tr["claim_amount"] / df_sev_tune_tr["claim_count"]
 )
 df_sev_tune_va["mean_sev"] = (
-    df_sev_tune_va["incurred_loss"] / df_sev_tune_va["claim_count"]
+    df_sev_tune_va["claim_amount"] / df_sev_tune_va["claim_count"]
 )
 
 X_sev_tr = df_sev_tune_tr[FEATURE_COLS]

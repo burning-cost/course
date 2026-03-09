@@ -78,9 +78,14 @@ The reason we use Unity Catalog for pricing is audit. Unity Catalog logs every r
 The schema must exist before you can write to it. Run this in a new cell:
 
 ```python
-spark.sql(f"CREATE CATALOG IF NOT EXISTS {CATALOG}")
+# Note: CREATE CATALOG requires a paid Databricks workspace.
+# On Databricks Free Edition, the catalog is already created for you.
+# If you are using the Free Edition, comment out the CREATE CATALOG line
+# and set CATALOG = "hive_metastore" in the configuration cell above.
+if CATALOG != "hive_metastore":
+    spark.sql(f"CREATE CATALOG IF NOT EXISTS {CATALOG}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
 print(f"Schema {CATALOG}.{SCHEMA} ready.")
 ```
 
-If you are using `hive_metastore`, omit the `CREATE CATALOG` line -- the legacy metastore does not use catalogs.
+If you are using Databricks Free Edition, set `CATALOG = "hive_metastore"` in the configuration cell above. The legacy metastore does not support `CREATE CATALOG` -- it already exists and is always available.

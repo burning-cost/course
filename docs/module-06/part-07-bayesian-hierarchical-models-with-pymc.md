@@ -161,7 +161,7 @@ with pm.Model(coords=coords) as hierarchical_model:
 # Print a model summary so we can check the structure before sampling.
 # This shows all random variables and their shapes.
 print("Model structure:")
-print(hierarchical_model.debug())
+hierarchical_model.debug()
 ```
 
 **What this does:** Defines the hierarchical Poisson model. The `with pm.Model()` block is how PyMC knows which variables belong to the model. Nothing is computed yet — this is just the model definition.

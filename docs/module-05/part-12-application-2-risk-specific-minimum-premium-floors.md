@@ -55,18 +55,18 @@ higher_than_conventional = floor_conformal_95 > floor_conventional
 print(f"\nRisks where conformal floor > conventional floor: {higher_than_conventional.sum():,} ({higher_than_conventional.mean():.1%})")
 if higher_than_conventional.any():
     sub = X_test_pl.filter(pl.Series(higher_than_conventional))
-    print(f"  Their profile: mean age {sub['driver_age'].mean():.1f}, "
+    print(f"  Their profile: mean age {sub['age'].mean():.1f}, "
           f"mean vehicle group {sub['vehicle_group'].mean():.1f}, "
-          f"{(sub['conviction_points'] > 0).mean() * 100:.1f}% with convictions")
+          f"mean credit score {sub['credit_score'].mean():.1f}")
 
 # Where conformal floor is LOWER than conventional: conventional overcharges these risks
 lower_than_conventional = floor_conformal_95 < floor_conventional
 print(f"\nRisks where conformal floor < conventional floor: {lower_than_conventional.sum():,} ({lower_than_conventional.mean():.1%})")
 if lower_than_conventional.any():
     sub_lo = X_test_pl.filter(pl.Series(lower_than_conventional))
-    print(f"  Their profile: mean age {sub_lo['driver_age'].mean():.1f}, "
+    print(f"  Their profile: mean age {sub_lo['age'].mean():.1f}, "
           f"mean vehicle group {sub_lo['vehicle_group'].mean():.1f}, "
-          f"mean NCD {sub_lo['ncd_years'].mean():.1f} years")
+          f"mean credit score {sub_lo['credit_score'].mean():.1f}")
 ```
 
 **Interpreting the results:**

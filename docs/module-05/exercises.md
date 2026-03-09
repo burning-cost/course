@@ -28,65 +28,23 @@ import mlflow
 from datetime import date
 from catboost import CatBoostRegressor, Pool
 from insurance_conformal import InsuranceConformalPredictor
+from insurance_datasets import load_motor
 
-# Regenerate the dataset and model from the tutorial
-rng = np.random.default_rng(seed=42)
-n   = 100_000
+# Load the same dataset as the tutorial
+df = pl.from_pandas(load_motor(n_policies=100_000, seed=42))
 
-areas             = ["A", "B", "C", "D", "E", "F"]
-area              = rng.choice(areas, size=n, p=[0.10, 0.18, 0.25, 0.22, 0.15, 0.10])
-vehicle_group     = rng.integers(1, 51, size=n)
-ncd_years         = rng.choice([0, 1, 2, 3, 4, 5], size=n, p=[0.08, 0.07, 0.09, 0.12, 0.20, 0.44])
-driver_age        = rng.integers(17, 86, size=n)
-conviction_points = rng.choice([0, 3, 6, 9], size=n, p=[0.78, 0.12, 0.07, 0.03])
-annual_mileage    = rng.integers(3_000, 35_000, size=n)
-exposure          = np.clip(rng.beta(8, 2, size=n), 0.05, 1.0)
-
-area_effect       = {"A": 0.0, "B": 0.10, "C": 0.20, "D": 0.35, "E": 0.50, "F": 0.70}
-conviction_effect = {0: 0.0, 3: 0.25, 6: 0.55, 9: 0.90}
-
-log_mu = (
-    -3.10
-    + np.array([area_effect[a] for a in area])
-    + (-0.15) * ncd_years
-    + 0.010   * (vehicle_group - 25)
-    + np.where(driver_age < 25, 0.55, np.where(driver_age > 70, 0.20, 0.0))
-    + np.array([conviction_effect[c] for c in conviction_points])
-    + np.where((driver_age < 25) & (vehicle_group > 35), 0.30, 0.0)
-)
-claim_count = rng.poisson(np.exp(log_mu) * exposure)
-
-sev_log_mu = (
-    7.80
-    + np.array([area_effect[a] * 0.3 for a in area])
-    + 0.015 * (vehicle_group - 25)
-    + np.array([conviction_effect[c] * 0.2 for c in conviction_points])
-)
-incurred = np.where(
-    claim_count > 0,
-    rng.gamma(shape=3.0, scale=np.exp(sev_log_mu) / 3.0, size=n) * claim_count,
-    0.0,
-)
-accident_year = rng.choice(
-    [2019, 2020, 2021, 2022, 2023, 2024], size=n, p=[0.12, 0.14, 0.16, 0.18, 0.20, 0.20]
+# Add synthetic accident years for the temporal split (same approach as tutorial Part 4)
+rng_year = np.random.default_rng(seed=42)
+accident_year = rng_year.choice([2019, 2020, 2021, 2022, 2023], size=len(df),
+                                 p=[0.15, 0.17, 0.20, 0.23, 0.25])
+df = df.with_columns(
+    pl.Series("accident_year", accident_year.astype(np.int32))
+).sort("accident_year").with_columns(
+    (pl.col("claim_amount") / pl.col("exposure")).alias("pure_premium")
 )
 
-df = pl.DataFrame({
-    "accident_year": accident_year.astype(np.int32),
-    "area": area,
-    "vehicle_group": vehicle_group.astype(np.int32),
-    "ncd_years": ncd_years.astype(np.int32),
-    "driver_age": driver_age.astype(np.int32),
-    "conviction_points": conviction_points.astype(np.int32),
-    "annual_mileage": annual_mileage.astype(np.int32),
-    "exposure": exposure,
-    "incurred": incurred,
-}).with_columns(
-    (pl.col("incurred") / pl.col("exposure")).alias("pure_premium")
-).sort("accident_year")
-
-X_COLS       = ["vehicle_group", "driver_age", "ncd_years", "area", "conviction_points", "annual_mileage"]
-CAT_FEATURES = ["area"]
+X_COLS       = ["age", "vehicle_age", "vehicle_group", "region", "credit_score"]
+CAT_FEATURES = ["region"]
 n_df         = len(df)
 train_end    = int(0.60 * n_df)
 cal_end      = int(0.80 * n_df)
@@ -466,9 +424,9 @@ Rationale:
 
 1. Using the calibrated `pearson_weighted` predictor, generate 90% intervals for the test set. Compute relative interval width `(upper - lower) / point`. Set the threshold at the 90th percentile. Verify the flag rate is exactly 10%.
 
-2. Build a summary table comparing the flagged and unflagged populations on: mean predicted pure premium, mean actual incurred, mean driver age, mean vehicle group, percentage with conviction points, and mean NCD years. Which feature shows the largest difference between flagged and unflagged?
+2. Build a summary table comparing the flagged and unflagged populations on: mean predicted pure premium, mean actual loss cost, mean age, mean vehicle group, mean vehicle age, and mean credit score. Which feature shows the largest difference between flagged and unflagged?
 
-3. Compute the actual empirical coverage (fraction where actual incurred falls within the 90% interval) for the flagged group and the unflagged group separately. Is coverage materially different between the groups? Should it be?
+3. Compute the actual empirical coverage (fraction where actual loss cost falls within the 90% interval) for the flagged group and the unflagged group separately. Is coverage materially different between the groups? Should it be?
 
 4. A 72-year-old driver in area A with NCD=5 and no convictions but driving vehicle group 49 has a very wide interval. A 23-year-old in area D with NCD=0 and 6 conviction points in vehicle group 25 has a narrower interval. Explain why, in plain English that you would use with the underwriting director.
 
@@ -533,12 +491,12 @@ for flag_val, label in [(True, "FLAGGED"), (False, "Not flagged")]:
     sub  = X_test_arr[mask]
     print(f"\n{label} ({mask.sum():,} policies):")
     print(f"  Mean point estimate:  £{point[mask].mean():.2f}")
-    print(f"  Mean actual incurred: £{y_test_arr[mask].mean():.2f}")
-    print(f"  Mean driver age:      {sub['driver_age'].mean():.1f} years")
-    print(f"  Mean vehicle group:   {sub['vehicle_group'].mean():.1f}")
-    print(f"  % with convictions:   {(sub['conviction_points'] > 0).mean() * 100:.1f}%")
-    print(f"  Mean NCD years:       {sub['ncd_years'].mean():.2f}")
-    print(f"  Mean relative width:  {rel_width[mask].mean():.3f}")
+    print(f"  Mean actual loss cost:  £{y_test_arr[mask].mean():.2f}")
+    print(f"  Mean age:               {sub['age'].mean():.1f} years")
+    print(f"  Mean vehicle group:     {sub['vehicle_group'].mean():.1f}")
+    print(f"  Mean vehicle age:       {sub['vehicle_age'].mean():.1f}")
+    print(f"  Mean credit score:      {sub['credit_score'].mean():.1f}")
+    print(f"  Mean relative width:    {rel_width[mask].mean():.3f}")
 
 # Task 3: Coverage by flag group
 print()
@@ -693,18 +651,19 @@ print(f"\nTask 2: Conformal floor > conventional: {higher_idx.sum():,} policies 
 X_test_arr = X_test.reset_index(drop=True)
 sub_hi = X_test_arr[higher_idx]
 sub_all = X_test_arr
-print(f"  Mean driver age:      {sub_hi['driver_age'].mean():.1f} vs portfolio {sub_all['driver_age'].mean():.1f}")
+print(f"  Mean age:             {sub_hi['age'].mean():.1f} vs portfolio {sub_all['age'].mean():.1f}")
 print(f"  Mean vehicle group:   {sub_hi['vehicle_group'].mean():.1f} vs portfolio {sub_all['vehicle_group'].mean():.1f}")
-print(f"  % with convictions:   {(sub_hi['conviction_points'] > 0).mean() * 100:.1f}% vs portfolio {(sub_all['conviction_points'] > 0).mean() * 100:.1f}%")
-print(f"  Mean NCD years:       {sub_hi['ncd_years'].mean():.2f} vs portfolio {sub_all['ncd_years'].mean():.2f}")
+print(f"  Mean vehicle age:     {sub_hi['vehicle_age'].mean():.1f} vs portfolio {sub_all['vehicle_age'].mean():.1f}")
+print(f"  Mean credit score:    {sub_hi['credit_score'].mean():.1f} vs portfolio {sub_all['credit_score'].mean():.1f}")
 
 # Task 3: Where conformal floor is lower (conventional overcharges)
 lower_idx = floor_conformal_95 < floor_conventional
 print(f"\nTask 3: Conventional floor > conformal: {lower_idx.sum():,} policies ({lower_idx.mean():.1%})")
 sub_lo = X_test_arr[lower_idx]
-print(f"  Mean driver age:      {sub_lo['driver_age'].mean():.1f}")
+print(f"  Mean age:             {sub_lo['age'].mean():.1f}")
 print(f"  Mean vehicle group:   {sub_lo['vehicle_group'].mean():.1f}")
-print(f"  Mean NCD years:       {sub_lo['ncd_years'].mean():.2f}")
+print(f"  Mean vehicle age:     {sub_lo['vehicle_age'].mean():.1f}")
+print(f"  Mean credit score:    {sub_lo['credit_score'].mean():.1f}")
 
 overcharge_pct = (floor_conventional[lower_idx] - floor_conformal_95[lower_idx]) / floor_conformal_95[lower_idx]
 print(f"  Mean % conventional overcharge: {overcharge_pct.mean() * 100:.1f}%")
@@ -777,7 +736,7 @@ disadvantage to any specific risk group.
 
 4. Recalibrate the predictor using 2,000 observations from the drifted cohort (simulating using recent live data). Recheck coverage on the remaining drifted observations. Does recalibration restore coverage? How long does it take compared to retraining the base model?
 
-5. **Extension:** Recalibration works when the base model's rankings are still correct but the error scale has shifted. To test whether rankings have degraded, compute the Gini coefficient (or Spearman rank correlation between predicted and actual incurred) on the original test set and on the drifted cohort. If the Gini falls by more than 5pp, it is a signal that the base model needs retraining, not just recalibration.
+5. **Extension:** Recalibration works when the base model's rankings are still correct but the error scale has shifted. To test whether rankings have degraded, compute the Gini coefficient (or Spearman rank correlation between predicted and actual loss cost) on the original test set and on the drifted cohort. If the Gini falls by more than 5pp, it is a signal that the base model needs retraining, not just recalibration.
 
 **Start here:**
 
@@ -788,29 +747,18 @@ rng_drift = np.random.default_rng(seed=77)
 n_drift   = 10_000
 
 # Generate a new cohort with the same feature distribution
-area_d        = rng_drift.choice(areas, size=n_drift, p=[0.10, 0.18, 0.25, 0.22, 0.15, 0.10])
-vehicle_grp_d = rng_drift.integers(1, 51, size=n_drift)
-ncd_d         = rng_drift.choice([0, 1, 2, 3, 4, 5], size=n_drift, p=[0.08, 0.07, 0.09, 0.12, 0.20, 0.44])
+# Generate drifted cohort using load_motor() scaled by 20%
 age_d         = rng_drift.integers(17, 86, size=n_drift)
-conv_d        = rng_drift.choice([0, 3, 6, 9], size=n_drift, p=[0.78, 0.12, 0.07, 0.03])
-mileage_d     = rng_drift.integers(3_000, 35_000, size=n_drift)
+vehicle_grp_d = rng_drift.integers(1, 51, size=n_drift)
 exp_d         = np.clip(rng_drift.beta(8, 2, size=n_drift), 0.05, 1.0)
 
+# Simplified DGP consistent with load_motor() structure
 log_mu_d = (
     -3.10
-    + np.array([area_effect[a] for a in area_d])
-    + (-0.15) * ncd_d
     + 0.010 * (vehicle_grp_d - 25)
     + np.where(age_d < 25, 0.55, np.where(age_d > 70, 0.20, 0.0))
-    + np.array([conviction_effect[c] for c in conv_d])
-    + np.where((age_d < 25) & (vehicle_grp_d > 35), 0.30, 0.0)
 )
-sev_log_mu_d = (
-    7.80
-    + np.array([area_effect[a] * 0.3 for a in area_d])
-    + 0.015 * (vehicle_grp_d - 25)
-    + np.array([conviction_effect[c] * 0.2 for c in conv_d])
-)
+sev_log_mu_d = 7.80 + 0.015 * (vehicle_grp_d - 25)
 claim_count_d = rng_drift.poisson(np.exp(log_mu_d) * exp_d)
 incurred_d    = np.where(
     claim_count_d > 0,
@@ -820,13 +768,13 @@ incurred_d    = np.where(
 pure_prem_d = incurred_d / exp_d
 
 import pandas as pd
+# X_drift uses same columns as X_COLS defined in the setup cell
 X_drift = pd.DataFrame({
-    "vehicle_group":    vehicle_grp_d.astype(np.int32),
-    "driver_age":       age_d.astype(np.int32),
-    "ncd_years":        ncd_d.astype(np.int32),
-    "area":             area_d,
-    "conviction_points": conv_d.astype(np.int32),
-    "annual_mileage":   mileage_d.astype(np.int32),
+    "age":           age_d.astype(np.int32),
+    "vehicle_age":   rng_drift.integers(0, 16, size=n_drift).astype(np.int32),
+    "vehicle_group": vehicle_grp_d.astype(np.int32),
+    "region":        rng_drift.choice(["North", "Midlands", "SouthEast", "London", "SouthWest"], size=n_drift),
+    "credit_score":  rng_drift.integers(300, 850, size=n_drift).astype(np.int32),
 })
 y_drift = pd.Series(pure_prem_d)
 

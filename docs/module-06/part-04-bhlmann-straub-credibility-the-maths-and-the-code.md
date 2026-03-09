@@ -39,7 +39,7 @@ This formula has a clean intuitive reading:
 - When w_i is small, Z_i → 0, and the estimate collapses to the portfolio mean mu
 - K controls the speed of this transition
 
-For KT with 847 policy-years and K = 1,200: Z = 847 / (847 + 1200) = 0.41. KT's rate would be 41% of its own observed 1.30% and 59% of the portfolio mean 6.8%. That gives 0.41 × 0.013 + 0.59 × 0.068 = 0.046, i.e. 4.6%. A meaningful adjustment downward from the portfolio mean, but far from KT's own volatile 1.3%.
+For KT with 847 policy-years and K = 1,200: Z = 847 / (847 + 1200) = 0.41. KT's rate would be 41% of its own observed 1.30% and 59% of the portfolio mean 6.8%. That gives 0.41 × 0.013 + 0.59 × 0.068 = 0.045, i.e. 4.5%. A meaningful adjustment downward from the portfolio mean, but far from KT's own volatile 1.3%.
 
 ### Estimating the structural parameters from data
 

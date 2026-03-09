@@ -20,6 +20,9 @@ PyMC is not installed on the default Databricks ML runtime. Install it in the fi
 
 ```python
 %pip install pymc arviz --quiet
+```
+
+```python
 dbutils.library.restartPython()
 ```
 

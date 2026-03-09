@@ -2,7 +2,7 @@
 
 The notebook runs end-to-end on synthetic data. Adapting it to a real motor book requires changes in four places only:
 
-**Stage 2 (Data ingestion).** Replace the synthetic data generation with a read from your policy administration system. The only requirement is that the input DataFrame has the columns that TRANSFORMS expects: `ncb_years`, `vehicle_group`, `age_band`, `annual_mileage`, `region`, `exposure`, `claim_count`, `incurred_loss`, `accident_year`.
+**Stage 2 (Data ingestion).** Replace the synthetic data generation with a read from your policy administration system. The only requirement is that the input DataFrame has the columns that TRANSFORMS expects: `age`, `vehicle_age`, `vehicle_group`, `region`, `credit_score`, `exposure`, `claim_count`, `claim_amount`, `accident_year`.
 
 ```python
 # Replace Stage 2 synthetic generation with:

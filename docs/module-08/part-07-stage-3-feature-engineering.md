@@ -21,9 +21,13 @@ Add a markdown cell:
 # Module-level, not inside functions, so they can be logged to MLflow
 # and serialised alongside the model.
 # -----------------------------------------------------------------------
-NCB_MAX     = 5
-VEHICLE_ORD = {"A":1,"B":2,"C":3,"D":4,"E":5}   # not used in this data, shown as pattern
 
+# load_motor() columns available:
+#   policy_id, age, vehicle_age, vehicle_group, region,
+#   credit_score, exposure, claim_count, claim_amount, accident_year
+
+AGE_BAND_BREAKS = [0, 25, 36, 51, 66, 999]   # right-exclusive
+AGE_BAND_LABELS = ["17-25", "26-35", "36-50", "51-65", "66+"]
 AGE_MID = {
     "17-25": 21,
     "26-35": 30,
@@ -32,53 +36,41 @@ AGE_MID = {
     "66+":   72,
 }
 
-MILEAGE_ORD = {
-    "<5k":    1,
-    "5k-10k": 2,
-    "10k-15k":3,
-    "15k+":   4,
-}
-
 # -----------------------------------------------------------------------
 # Transform functions: pure functions, one job each.
 # Each takes a Polars DataFrame and returns a Polars DataFrame.
 # The output DataFrame contains all original columns plus the new ones.
 # -----------------------------------------------------------------------
 
-def encode_ncb(df: pl.DataFrame) -> pl.DataFrame:
-    """
-    NCB deficit = NCB_MAX - ncb_years.
-    Puts new drivers (ncb=0) at deficit=5 (high) and
-    fully discounted drivers (ncb=5) at deficit=0 (low).
-    The GBM can then find a monotone increasing effect for the deficit.
-    """
-    return df.with_columns(
-        (NCB_MAX - pl.col("ncb_years")).alias("ncb_deficit")
-    )
-
 def encode_age(df: pl.DataFrame) -> pl.DataFrame:
     """
-    Map age band to a numeric midpoint.
+    Band driver age and map to numeric midpoint.
     age_mid is a continuous approximation of the band's centre.
     The GBM can model non-linear age effects correctly with this encoding.
     """
     return df.with_columns(
+        pl.when(pl.col("age") < 25).then(pl.lit("17-25"))
+          .when(pl.col("age") < 36).then(pl.lit("26-35"))
+          .when(pl.col("age") < 51).then(pl.lit("36-50"))
+          .when(pl.col("age") < 66).then(pl.lit("51-65"))
+          .otherwise(pl.lit("66+"))
+          .alias("age_band")
+    ).with_columns(
         pl.col("age_band")
           .replace(AGE_MID)
           .cast(pl.Float64)
           .alias("age_mid")
     )
 
-def encode_mileage(df: pl.DataFrame) -> pl.DataFrame:
+def add_young_high_vg(df: pl.DataFrame) -> pl.DataFrame:
     """
-    Map mileage band to an ordinal integer.
-    Preserves the ordering (<5k < 5k-10k < 10k-15k < 15k+).
+    Superadditive interaction: young driver × high vehicle group.
+    Young drivers in high-group vehicles are disproportionately risky.
     """
     return df.with_columns(
-        pl.col("annual_mileage")
-          .replace(MILEAGE_ORD)
-          .cast(pl.Int32)
-          .alias("mileage_ord")
+        (
+            (pl.col("age") < 25) & (pl.col("vehicle_group") > 35)
+        ).cast(pl.Int32).alias("young_high_vg")
     )
 
 def add_log_exposure(df: pl.DataFrame) -> pl.DataFrame:
@@ -96,11 +88,11 @@ def add_log_exposure(df: pl.DataFrame) -> pl.DataFrame:
 # The master transform list and feature column specification.
 # These are the ONLY definitions you should change if you add a new feature.
 # -----------------------------------------------------------------------
-TRANSFORMS   = [encode_ncb, encode_age, encode_mileage, add_log_exposure]
+TRANSFORMS   = [encode_age, add_young_high_vg, add_log_exposure]
 
 # FEATURE_COLS: the columns passed to CatBoost as input features.
-# This does NOT include log_exposure or claim_count or incurred_loss.
-FEATURE_COLS = ["ncb_deficit", "vehicle_group", "age_mid", "mileage_ord", "region"]
+# This does NOT include log_exposure, claim_count, or claim_amount.
+FEATURE_COLS = ["age_mid", "vehicle_age", "vehicle_group", "region", "credit_score", "young_high_vg"]
 
 # CAT_FEATURES: the subset of FEATURE_COLS that CatBoost should treat as categorical.
 # CatBoost handles categories natively -- do not one-hot encode them.
@@ -123,11 +115,12 @@ print("Transform test passed.")
 print("Columns after transforms:")
 print([c for c in sample_transformed.columns])
 print("\nFirst row (selected columns):")
-print(sample_transformed.select(["ncb_years","ncb_deficit","age_band","age_mid",
-                                  "annual_mileage","mileage_ord","exposure","log_exposure"]))
+print(sample_transformed.select(["age", "age_band", "age_mid",
+                                  "vehicle_group", "young_high_vg",
+                                  "exposure", "log_exposure"]))
 ```
 
-**What you should see:** The `ncb_deficit` column for a policy with `ncb_years=5` should be 0. For `ncb_years=0`, it should be 5. The `age_mid` for `age_band="36-50"` should be 43. The `mileage_ord` for `"10k-15k"` should be 3. The `log_exposure` should be the natural log of the exposure value.
+**What you should see:** The `age_mid` for a policy with `age=23` should be 21. For `age=43`, it should be 43. The `young_high_vg` flag should be 1 for policies with `age < 25` and `vehicle_group > 35`, and 0 otherwise. The `log_exposure` should be the natural log of the exposure value.
 
 ### Applying the transforms and writing to Delta
 

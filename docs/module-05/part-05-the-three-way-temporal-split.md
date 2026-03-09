@@ -28,8 +28,8 @@ In a new cell, type this and run it:
 ```python
 # The DataFrame is already sorted by accident_year (we did this above)
 n   = len(df)
-X_COLS = ["vehicle_group", "driver_age", "ncd_years", "area", "conviction_points", "annual_mileage"]
-CAT_FEATURES = ["area"]
+X_COLS = ["age", "vehicle_age", "vehicle_group", "region", "credit_score"]
+CAT_FEATURES = ["region"]
 
 train_end = int(0.60 * n)   # first 60% of rows (by accident year) = training
 cal_end   = int(0.80 * n)   # next 20% = calibration
@@ -64,7 +64,7 @@ print(f"Test set:         {len(X_test):,}  rows, years: {test_years.to_list()}")
 ```text
 Training set:     60,xxx rows, years: [2019, 2020, 2021, 2022]
 Calibration set:  20,xxx rows, years: [2022, 2023]
-Test set:         20,xxx rows, years: [2023, 2024]
+Test set:         20,xxx rows, years: [2023]
 ```
 
-There will be some year overlap at the boundaries (e.g. 2022 appears in both training and calibration) because the rows within a year are ordered by `rng.choice` rather than strictly chronologically. This is acceptable - the important thing is that the majority of calibration rows are more recent than the majority of training rows.
+There will be some year overlap at the boundaries (e.g. 2022 appears in both training and calibration) because the synthetic accident years are assigned by random draw rather than strict chronological order. This is acceptable - the important thing is that the majority of calibration rows are more recent than the majority of training rows.

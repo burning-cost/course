@@ -166,7 +166,7 @@ print(result.summary())
 rate_factors_df = pl.DataFrame({
     "run_date":      [RUN_DATE],
     "factor":        ["f_region", "f_ncb", "f_age", "f_iat"],
-    "adjustment":    result.factor_adjustments.tolist(),
+    "adjustment":    [float(result.factor_adjustments.get(f, 1.0)) for f in ["f_region", "f_ncb", "f_age", "f_iat"]],
     "lr_target":     [LR_TARGET] * 4,
     "optimiser_converged": [result.converged] * 4,
     "expected_lr":   [round(result.expected_loss_ratio, 4)] * 4,
