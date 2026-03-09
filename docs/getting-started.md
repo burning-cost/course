@@ -16,19 +16,19 @@ The course is twelve modules. Each module contains:
 | Module | Title | Estimated time |
 |--------|-------|----------------|
 | 01 | Databricks for Pricing Teams | 3-4 hours |
-| 02 | GLMs in Python - The Bridge from Emblem | 4-5 hours |
-| 03 | GBMs for Insurance Pricing - CatBoost | 5-6 hours |
-| 04 | SHAP Relativities - From GBM to Rating Factor Tables | 3-4 hours |
-| 05 | Conformal Prediction Intervals | 4-5 hours |
-| 06 | Credibility and Bayesian Pricing - The Thin-Cell Problem | 4-5 hours |
-| 07 | Constrained Rate Optimisation | 3-4 hours |
-| 08 | End-to-End Pricing Pipeline | 5-6 hours |
-| 09 | Demand Modelling and Price Elasticity | 4-5 hours |
+| 02 | GLMs in Python - The Bridge from Emblem | 5-6 hours |
+| 03 | GBMs for Insurance Pricing - CatBoost | 4-5 hours |
+| 04 | SHAP Relativities - From GBM to Rating Factor Tables | 4-5 hours |
+| 05 | Conformal Prediction Intervals | 4 hours |
+| 06 | Credibility and Bayesian Pricing - The Thin-Cell Problem | 5-6 hours |
+| 07 | Constrained Rate Optimisation | 4-5 hours |
+| 08 | End-to-End Pricing Pipeline | 6-8 hours |
+| 09 | Demand Modelling and Price Elasticity | 5-6 hours |
 | 10 | Automated Interaction Detection | 4-5 hours |
-| 11 | Model Monitoring and Drift Detection | 3-4 hours |
-| 12 | Spatial Territory Rating | 4-5 hours |
+| 11 | Model Monitoring and Drift Detection | 4-5 hours |
+| 12 | Spatial Territory Rating | 5-6 hours |
 
-Total: approximately 47-59 hours of study and practical work, depending on how deeply you engage with the exercises.
+Total: approximately 53-69 hours of study and practical work, depending on how deeply you engage with the exercises.
 
 **Modules 1-8** form the core path: from setting up Databricks to running a complete rate review. **Modules 9-12** extend the pipeline with specialist techniques that address specific gaps in the core workflow.
 
@@ -87,7 +87,7 @@ Several modules use open-source pricing libraries built by Burning Cost. Install
 On Databricks, run this in a notebook cell before working through the course:
 
 ```python
-%pip install insurance-cv shap-relativities insurance-conformal credibility bayesian-pricing rate-optimiser insurance-demand insurance-elasticity insurance-interactions insurance-monitoring insurance-spatial --quiet
+%pip install insurance-datasets insurance-cv shap-relativities insurance-conformal credibility bayesian-pricing rate-optimiser insurance-demand insurance-elasticity insurance-interactions insurance-monitoring insurance-spatial --quiet
 ```
 
 Then restart the Python kernel:
@@ -104,6 +104,7 @@ Each notebook includes an install cell at the top that installs only what that m
 
 | Module | Libraries needed |
 |--------|-----------------|
+| 02-05, 08 | `insurance-datasets` (synthetic UK motor portfolio used throughout) |
 | 03 | `catboost`, `optuna`, `mlflow`, `insurance-cv` |
 | 04 | `shap-relativities`, `catboost` |
 | 05 | `insurance-conformal`, `catboost` |
@@ -119,7 +120,7 @@ The `bayesian-pricing` and `insurance-spatial` packages require PyMC 5.x and Arv
 
 ### Source code
 
-Full source code for each library is available from Burning Cost. These are open-source tools — read, modify, and extend them as needed for your own pricing workflows.
+Full source code for each library is on GitHub at [github.com/burning-cost](https://github.com/burning-cost). These are open-source tools — read, modify, and extend them as needed for your own pricing workflows.
 
 ---
 
