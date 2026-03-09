@@ -1,23 +1,23 @@
 site_name: Burning Cost
-site_description: Modern Insurance Pricing with Python and Databricks
+site_description: "On the forefront of ML and data science research in UK personal lines insurance. Best practice pricing techniques and Databricks workflows, module by module."
 site_author: Burning Cost
 site_url: https://burning-cost.github.io/course/
 
 theme:
   name: material
   palette:
-    - scheme: default
-      primary: indigo
-      accent: indigo
+    - scheme: slate
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-7
-        name: Switch to dark mode
-    - scheme: slate
-      primary: indigo
-      accent: indigo
+        name: Switch to light mode
+    - scheme: default
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-4
-        name: Switch to light mode
+        name: Switch to dark mode
   font:
     text: Inter
     code: JetBrains Mono
@@ -33,6 +33,9 @@ theme:
     - content.code.copy
     - content.code.annotate
     - toc.integrate
+
+extra_css:
+  - stylesheets/extra.css
 
 plugins:
   - search:
