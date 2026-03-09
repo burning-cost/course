@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://burning-cost.github.io/course/sitemap.xml
