@@ -72,6 +72,7 @@ nav:
     - 'Part 6: Compute basics': module-01/part-06-compute-basics.md
     - 'Part 7: Unity Catalog (preview)': module-01/part-07-unity-catalog-preview.md
     - 'Exercises': module-01/exercises.md
+    - 'Notebook': module-01/notebook.py
   - 'Module 2: GLMs in Python: The Bridge from Emblem':
     - 'Overview': module-02/overview.md
     - 'Part 0: Setting up your notebook': module-02/part-00-setting-up-your-notebook.md
@@ -88,6 +89,7 @@ nav:
     - 'Part 11: The Tweedie model (alternative approach)': module-02/part-11-the-tweedie-model-alternative-approach.md
     - 'Part 12: Gotchas when moving from Emblem': module-02/part-12-gotchas-when-moving-from-emblem.md
     - 'Exercises': module-02/exercises.md
+    - 'Notebook': module-02/notebook.py
   - 'Module 3: GBMs for Insurance Pricing: CatBoost':
     - 'Overview': module-03/overview.md
     - 'Part 1: Why this matters - the question about GBMs': module-03/part-01-why-this-matters-the-question-about-gbms.md
@@ -106,6 +108,7 @@ nav:
     - 'Part 14: Comparing the GBM to the GLM': module-03/part-14-comparing-the-gbm-to-the-glm.md
     - 'Part 15: Registering the model': module-03/part-15-registering-the-model.md
     - 'Exercises': module-03/exercises.md
+    - 'Notebook': module-03/notebook.py
   - 'Module 4: SHAP Relativities: From GBM to Rating Factor Tables':
     - 'Overview': module-04/overview.md
     - 'Part 1: What SHAP values are and why they work for relativities': module-04/part-01-what-shap-values-are-and-why-they-work-for-relativities.md
@@ -127,6 +130,7 @@ nav:
     - 'Part 17: Writing relativities to Unity Catalog': module-04/part-17-writing-relativities-to-unity-catalog.md
     - 'Part 18: Limitations to document': module-04/part-18-limitations-to-document.md
     - 'Exercises': module-04/exercises.md
+    - 'Notebook': module-04/notebook.py
   - 'Module 5: Conformal Prediction Intervals':
     - 'Overview': module-05/overview.md
     - 'Part 1: Why uncertainty matters - the actuarial argument': module-05/part-01-why-uncertainty-matters-the-actuarial-argument.md
@@ -147,6 +151,7 @@ nav:
     - 'Part 16: Limitations for regulatory presentation': module-05/part-16-limitations-for-regulatory-presentation.md
     - 'Part 17: Checkpoint - verify the complete notebook': module-05/part-17-checkpoint-verify-the-complete-notebook.md
     - 'Exercises': module-05/exercises.md
+    - 'Notebook': module-05/notebook.py
   - 'Module 6: Credibility and Bayesian Pricing: The Thin-Cell Problem':
     - 'Overview': module-06/overview.md
     - 'Part 1: The problem you are solving': module-06/part-01-the-problem-you-are-solving.md
@@ -166,6 +171,7 @@ nav:
     - 'Part 15: Databricks deployment': module-06/part-15-databricks-deployment.md
     - 'Part 16: Limitations — for regulatory documentation': module-06/part-16-limitations-for-regulatory-documentation.md
     - 'Exercises': module-06/exercises.md
+    - 'Notebook': module-06/notebook.py
   - 'Module 7: Constrained Rate Optimisation':
     - 'Overview': module-07/overview.md
     - 'Part 1: The problem in plain English': module-07/part-01-the-problem-in-plain-english.md
@@ -186,6 +192,7 @@ nav:
     - 'Part 16: Presenting results to the pricing committee': module-07/part-16-presenting-results-to-the-pricing-committee.md
     - 'Part 17: Limitations': module-07/part-17-limitations.md
     - 'Exercises': module-07/exercises.md
+    - 'Notebook': module-07/notebook.py
   - 'Module 8: End-to-End Pricing Pipeline':
     - 'Overview': module-08/overview.md
     - 'Part 1: Why pipelines fail -- the opening scenario': module-08/part-01-why-pipelines-fail-the-opening-scenario.md
@@ -207,6 +214,7 @@ nav:
     - 'Part 17: What this pipeline does not cover': module-08/part-17-what-this-pipeline-does-not-cover.md
     - 'Part 18: Limitations': module-08/part-18-limitations.md
     - 'Exercises': module-08/exercises.md
+    - 'Notebook': module-08/notebook.py
   - 'Module 9: Demand Modelling and Price Elasticity':
     - 'Overview': module-09/overview.md
     - 'Part 1: Why the risk model is not enough': module-09/part-01-why-the-risk-model-is-not-enough.md

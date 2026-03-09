@@ -29,7 +29,11 @@ Back in Databricks:
 1. Click **Workspace** in the left sidebar
 2. In the Workspace browser, look for a **Git** button or click **+** > **Git folder** (or **Add Repo** on older interfaces)
 3. Paste the GitHub URL
-4. Databricks will ask for your GitHub credentials - use a Personal Access Token, not your password. To create one: GitHub > Settings > Developer settings > Personal access tokens > Tokens (classic) > Generate new token. Give it `repo` scope. Copy the token and paste it into Databricks.
+4. Databricks will ask for your GitHub credentials. There are two ways to authenticate:
+
+   **Faster: GitHub OAuth via Linked Accounts** (Databricks Runtime 13+). Go to Databricks **Settings** > **Linked accounts** > **GitHub** and authorise Databricks directly. This avoids token management entirely and is the recommended path if your workspace is on DBR 13 or later.
+
+   **Fallback: Personal Access Token.** If your workspace does not support Linked Accounts, use a PAT. GitHub > Settings > Developer settings > Personal access tokens > Tokens (classic) > Generate new token. Give it `repo` scope. Copy the token and paste it into Databricks.
 5. Click **Create Git folder** (or **Create Repo**)
 
 **Note on navigation:** In Databricks Runtime 13+, the dedicated **Repos** sidebar icon was merged into **Workspace**. Your Git-backed repos appear in the Workspace browser under a "Repos" folder. The functionality is identical - the entry point just moved.

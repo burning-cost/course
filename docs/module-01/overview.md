@@ -12,8 +12,10 @@ By the end of this module you will have a working Databricks environment, a firs
 2. Setting up your Free Edition account
 3. Your first notebook
 4. Working with data in Databricks
-5. Unity Catalog — organising your work
-6. Scheduled Workflows (paid workspace only)
-7. What comes next
+5. Organising your work (notebooks, repos, Git)
+6. Compute basics
+7. Unity Catalog — a preview of the governance layer
+
+[Download the notebook for this module](notebook.py)
 
 ---

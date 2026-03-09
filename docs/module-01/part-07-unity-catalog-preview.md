@@ -8,7 +8,7 @@ Every Delta table you created in Parts 4 and 6 has a simple name: `policies_samp
 
 Unity Catalog is Databricks' governance layer. It organises all tables in a three-level hierarchy:
 
-```sql
+```text
 catalog . schema . table
 ```
 
@@ -36,7 +36,7 @@ On Free Edition, you work with simple table names (no catalog or schema prefix).
 
 In a paid workspace, the first thing to understand is what catalog and schema your team uses. Common patterns:
 
-```sql
+```text
 pricing.motor.claims_exposure          <- Motor claims data
 pricing.motor.model_relativities       <- Model outputs
 pricing.home.claims_exposure           <- Home claims data

@@ -14,5 +14,6 @@ By the end of this module you will have:
 - Built risk-specific minimum premium floors from the conformal upper bound
 - Produced a portfolio reserve range estimate with explicit assumptions
 - Logged everything to MLflow and written intervals to Unity Catalog for audit
+[Download the notebook for this module](notebook.py)
 
 ---

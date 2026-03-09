@@ -17,5 +17,6 @@ By the end of this module you will have:
 - Fixed the cross-subsidy analysis to show what it actually shows
 - Extended the optimiser to handle stochastic loss ratio targets using chance constraints
 - Documented the limitations of this approach honestly
+[Download the notebook for this module](notebook.py)
 
 ---

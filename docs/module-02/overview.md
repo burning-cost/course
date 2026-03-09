@@ -17,5 +17,6 @@ This matters now more than it did five years ago. PS 21/5 (the general insurance
 Moving your GLM to Python and Databricks solves this. The model code is version-controlled. The training data is a Delta table with time travel. The fitted model is logged to MLflow with the parameters, metrics, and artefacts. Running the model from six months ago means checking out the relevant Git tag and pointing at the Delta table at that timestamp. That is reproducibility you can demonstrate to a regulator.
 
 The GLM itself is not the hard part. The encoding, the validation, and the export are where the work is. That is what this module covers.
+[Download the notebook for this module](notebook.py)
 
 ---
