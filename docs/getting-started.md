@@ -1,38 +1,42 @@
 # Getting Started — Modern Insurance Pricing with Python and Databricks
 
-Welcome. You have purchased the complete Burning Cost training course. This guide covers what is included, what you need before you start, and how to get up and running.
+Welcome to the Burning Cost training course. This guide covers what is included, what you need before you start, and how to get up and running.
 
 ---
 
 ## What is included
 
-The course is eight modules. Each module contains:
+The course is twelve modules. Each module contains:
 
-- **README.md** — a concise overview of the module: what it covers, prerequisites, estimated time, and what you will be able to do when you finish
-- **tutorial.md** — the main written content. Read this first, before opening the notebook. It explains the reasoning behind every design decision, not just the mechanics
-- **notebook.py** — a Databricks notebook covering the same material end-to-end on synthetic data. Import and run this as you work through the tutorial
-- **exercises.md** — hands-on exercises per module with full worked solutions
+- **Overview** — what it covers, prerequisites, estimated time, and what you will be able to do when you finish
+- **Tutorial parts** — the main written content, broken into manageable sections. Read these before opening the notebook. They explain the reasoning behind every design decision, not just the mechanics
+- **Notebook** — a Databricks notebook covering the same material end-to-end on synthetic data. Import and run this as you work through the tutorial
+- **Exercises** — hands-on exercises with full worked solutions
 
 | Module | Title | Estimated time |
 |--------|-------|----------------|
-| 01 | Databricks for Pricing Teams | 3–4 hours |
-| 02 | GLMs in Python — The Bridge from Emblem | 4–5 hours |
-| 03 | GBMs for Insurance Pricing — CatBoost | 5–6 hours |
-| 04 | SHAP Relativities — From GBM to Rating Factor Tables | 3–4 hours |
-| 05 | Conformal Prediction Intervals | 4–5 hours |
-| 06 | Credibility & Bayesian Pricing — The Thin-Cell Problem | 4–5 hours |
-| 07 | Constrained Rate Optimisation | 3–4 hours |
-| 08 | End-to-End Pricing Pipeline | 5–6 hours |
+| 01 | Databricks for Pricing Teams | 3-4 hours |
+| 02 | GLMs in Python - The Bridge from Emblem | 4-5 hours |
+| 03 | GBMs for Insurance Pricing - CatBoost | 5-6 hours |
+| 04 | SHAP Relativities - From GBM to Rating Factor Tables | 3-4 hours |
+| 05 | Conformal Prediction Intervals | 4-5 hours |
+| 06 | Credibility and Bayesian Pricing - The Thin-Cell Problem | 4-5 hours |
+| 07 | Constrained Rate Optimisation | 3-4 hours |
+| 08 | End-to-End Pricing Pipeline | 5-6 hours |
+| 09 | Demand Modelling and Price Elasticity | 4-5 hours |
+| 10 | GBM-to-GLM Distillation and Interactions | 4-5 hours |
+| 11 | Model Monitoring and Drift Detection | 3-4 hours |
+| 12 | Spatial Territory Rating | 4-5 hours |
 
-Total: approximately 31–39 hours of study and practical work, depending on how deeply you engage with the exercises.
+Total: approximately 47-59 hours of study and practical work, depending on how deeply you engage with the exercises.
+
+**Modules 1-8** form the core path: from setting up Databricks to running a complete rate review. **Modules 9-12** extend the pipeline with specialist techniques that address specific gaps in the core workflow.
 
 ---
 
-## Your purchase includes all future content
+## This course is free and continuously updated
 
-Your £295 purchase gives you lifetime access to this course. We update modules as tools evolve and add new content over time. All future additions are included at no extra charge. This includes any new modules we publish and access to all future Burning Cost tools and content delivered through this platform.
-
-Re-download at any time to get the latest version. If you spot an error — in a notebook or a tutorial — report it to pricing.frontier@gmail.com and we will fix it and notify all course purchasers.
+We update modules as tools evolve and add new content over time. If you spot an error - in a notebook or a tutorial - report it to pricing.frontier@gmail.com and we will fix it.
 
 ---
 
@@ -40,9 +44,9 @@ Re-download at any time to get the latest version. If you spot an error — in a
 
 Start with Module 01. It sets up the Databricks environment — the Unity Catalog schema, Delta table conventions, and MLflow experiment structure — that every subsequent module depends on. If you skip it, the later modules will work, but you will have to adapt the setup steps yourself.
 
-Work through the modules in order: 01 → 02 → 03 → 04 → 05 → 06 → 07 → 08.
+Work through Modules 01-08 in order. Module 08 is the capstone - it assumes you are comfortable with everything that came before.
 
-Module 08 (End-to-End Pipeline) is the capstone. It assumes you are comfortable with everything that came before.
+Modules 09-12 build on the core pipeline. Each tackles a specific problem that M08 flags as a limitation: demand-aware pricing, automated interaction detection, production model monitoring, and spatial territory factors. Work through them in any order after completing M08.
 
 ---
 
@@ -52,7 +56,7 @@ Module 08 (End-to-End Pipeline) is the capstone. It assumes you are comfortable 
 
 **Python.** You need to be able to read Python code and follow a data pipeline. You do not need to be a software engineer. If you have used Python for data work — loading a CSV, filtering a DataFrame, calling a function — you have enough Python for this course.
 
-**GLMs.** Modules 02 onwards assume you are comfortable with frequency-severity GLMs: you know what a link function is, what `exp(beta)` gives you, and what a factor table looks like. You do not need to know Python GLM libraries before you start.
+**GLMs.** Modules 02 onwards assume you are comfortable with frequency-severity GLMs: you know what a link function is, what `exp(beta)` gives you, and what a factor table looks like. You do not need to know Python GLM libraries before you start. If you are new to GLMs, work through the IFoA's CT6 material or read de Jong and Heller's *Generalized Linear Models for Insurance Data* before starting Module 02.
 
 **Polars.** The course uses Polars for all data manipulation. If you have only used Pandas, the syntax is similar enough that the code will make sense as you go — there are inline comments wherever Polars idioms differ from what a Pandas user would expect. You do not need prior Polars experience.
 
@@ -83,7 +87,7 @@ Several modules use open-source pricing libraries built by Burning Cost. Install
 On Databricks, run this in a notebook cell before working through the course:
 
 ```python
-%pip install insurance-cv shap-relativities insurance-conformal credibility bayesian-pricing rate-optimiser --quiet
+%pip install insurance-cv shap-relativities insurance-conformal credibility bayesian-pricing rate-optimiser insurance-demand insurance-elasticity insurance-interactions insurance-monitoring insurance-spatial --quiet
 ```
 
 Then restart the Python kernel:
@@ -106,8 +110,12 @@ Each notebook includes an install cell at the top that installs only what that m
 | 06 | `credibility`, `bayesian-pricing`, `pymc`, `arviz` |
 | 07 | `rate-optimiser` |
 | 08 | All of the above |
+| 09 | `insurance-demand`, `insurance-elasticity`, `catboost` |
+| 10 | `insurance-interactions`, `catboost`, `glum` |
+| 11 | `insurance-monitoring`, `catboost` |
+| 12 | `insurance-spatial`, `pymc` |
 
-The `bayesian-pricing` package requires PyMC 5.x and ArviZ. The install takes a few minutes. Run the install cell first, then restart the Python kernel (`dbutils.library.restartPython()`) before executing any other cells.
+The `bayesian-pricing` and `insurance-spatial` packages require PyMC 5.x and ArviZ. The install takes a few minutes. Run the install cell first, then restart the Python kernel (`dbutils.library.restartPython()`) before executing any other cells.
 
 ### Source code
 

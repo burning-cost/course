@@ -1,22 +1,50 @@
-# Module 11: Exposure Curves and Increased Limits Factors
+# Module 11: Model Monitoring and Drift Detection
 
-In Module 6 you learned how to blend thin experience with portfolio priors using credibility and Bayesian hierarchical models. In Module 7 you built a formally constrained rate optimiser that satisfies loss ratio targets, volume floors, and FCA fair-pricing rules simultaneously. Both of those modules deal with the ground-up insurance product: you are pricing the first layer of loss, the part the direct insurer pays.
+## What this module covers
 
-This module moves up the tower. We are concerned with what happens above a retention: per-risk excess-of-loss reinsurance, London market layers, and the increased limits factors used to extend a basic-limit rate to higher policy limits. These problems share a common foundation that the direct pricing curriculum typically never teaches: the exposure curve.
+You have a trained CatBoost frequency model from Module 8. It is deployed, scoring new business, feeding the pricing pipeline. It produces predictions every day.
 
-Every Lloyd's syndicate, every reinsurance underwriter, and every commercial lines pricing team that prices above a deductible needs this. Most UK pricing actuaries who came up through personal lines have never seen the maths. Those who have seen it usually learned it in R, from the `mbbefd` package, or in Excel using Swiss Re tables from 2005. There has been no Python implementation on PyPI until recently.
+Now what?
 
-We use the `insurance-ilf` library throughout. It provides the MBBEFD distribution class, curve fitting, ILF tables, and per-risk XL pricing in a single tested package. By the end of this module you will understand what exposure curves are, where the MBBEFD family comes from, and how to fit, validate, and deploy them for real pricing work on Databricks.
+This module covers the period after deployment: how you know the model is still working, how you detect when it stops working, and what you do about it. This is called model monitoring.
 
-By the end of this module you will have:
+A model trained on 2022-2023 data encodes the relationships that existed in that world. That world changes. Drivers age, claim patterns shift, the mix of business changes, the Ogden rate moves. The model does not automatically update itself. If you do not monitor it, you will not know it has gone stale until loss ratios tell you - and by then you have been underpricing for months.
 
-- Understood what an exposure curve is and why it is the right tool for excess-of-loss pricing
-- Derived the key MBBEFD formulas from first principles, accessibly
-- Installed and explored the Swiss Re standard curves (Y1-Y4, Lloyd's)
-- Fitted MBBEFD distributions to claims data using MLE, with correct handling of truncated and censored data
-- Built ILF tables from fitted curves and understood the marginal ILF structure
-- Priced a per-risk XL layer from a ceding company's risk profile using the exposure rating method
-- Produced and interpreted Lee diagrams for visual communication with underwriters
-- Understood where this connects to London market practice
+We use the `insurance-monitoring` library throughout. It provides PSI, CSI, A/E ratios with Poisson confidence intervals, Gini drift testing, and a combined `MonitoringReport` class that runs everything in one call.
 
----
+## Structure
+
+| Part | Topic |
+|------|-------|
+| 1 | Why monitoring matters |
+| 2 | Setting up the notebook |
+| 3 | What is model drift? |
+| 4 | Population Stability Index (PSI) |
+| 5 | Characteristic Stability Index (CSI) |
+| 6 | Actual vs Expected ratios |
+| 7 | Gini drift detection |
+| 8 | Building a MonitoringReport |
+| 9 | Interpreting the report |
+| 10 | Writing results to Delta tables |
+| 11 | Scheduling monitoring as a Databricks job |
+| 12 | Setting up alerts |
+| 13 | Recalibration triggers |
+| 14 | Connecting to the pricing pipeline |
+| 15 | Regulatory reporting |
+| 16 | What we have not covered |
+| 17 | Summary |
+
+## Prerequisites
+
+- Module 8: End-to-End Pipeline (the model we are monitoring lives there)
+- Module 3: CatBoost (you need to understand what the model does)
+- Module 2: Polars basics
+
+## Libraries used
+
+- `insurance-monitoring` - monitoring metrics and reporting
+- `insurance-datasets` - synthetic UK motor data
+- `catboost` - the model itself
+- `polars` - data manipulation
+- `mlflow` - metric logging
+- `delta` - persisting results (Databricks built-in)

@@ -6,4 +6,6 @@ This module connects everything into a single pipeline that runs from raw data t
 
 By the end of this module you will have run a complete UK motor rate review in one Databricks notebook: data ingestion, feature engineering, walk-forward validation, hyperparameter tuning, frequency and severity modelling, SHAP relativities, conformal prediction intervals, rate optimisation, and an audit record that satisfies the FCA's Consumer Duty reproducibility requirements.
 
+This is the capstone of the core course, but it is not the end. The pipeline we build here has deliberate gaps that Modules 9-12 fill. Module 9 adds demand-aware pricing so your rate changes account for customer retention. Module 10 automates interaction detection so you do not miss non-linear effects your GLM cannot express. Module 11 covers what happens after deployment - monitoring the model in production and detecting when it drifts. Module 12 adds spatial territory factors using postcode-level data. Each of these modules slots into the pipeline at a specific point.
+
 ---
