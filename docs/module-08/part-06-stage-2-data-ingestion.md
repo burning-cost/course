@@ -1,136 +1,62 @@
 ## Part 6: Stage 2 -- Data ingestion
 
-In production, this stage reads from your policy administration system. In this tutorial, we generate synthetic UK motor data so the notebook is self-contained.
+In production, this stage reads from your policy administration system. In this tutorial, we load synthetic UK motor data from the `insurance-datasets` library — the same dataset used across all course modules.
 
-The synthetic data generates 200,000 policies across accident years 2021-2024. The data generating process has the same structure as the Module 3 and Module 5 datasets: a Poisson claim count with a log-linear frequency model, log-normal severity with a superadditive interaction between young drivers and high vehicle groups, and realistic exposure distributions.
+We use 200,000 policies here (versus 100,000 in earlier modules) to simulate a larger book and give the pipeline more data to work with for walk-forward cross-validation. The portfolio spans accident years 2019-2023 with realistic exposure distributions.
 
 Add a markdown cell:
 
 ```python
 %md
-## Stage 2: Data ingestion -- generate synthetic motor portfolio
+## Stage 2: Data ingestion -- load synthetic motor portfolio
 ```
 
 Then add this code cell:
 
 ```python
+from insurance_datasets import load_motor
 import polars as pl
 import numpy as np
 import pandas as pd
 
-rng = np.random.default_rng(seed=2026)
+# Load 200,000-policy portfolio for the pipeline
+# Same DGP as Modules 2-5 — parameters, column names, and distributions are identical
+raw_pl = pl.from_pandas(load_motor(n_policies=200_000, seed=42))
 
-# -----------------------------------------------------------------------
-# Portfolio dimensions
-# -----------------------------------------------------------------------
-N_POLICIES   = 200_000
-ACCIDENT_YEARS = [2021, 2022, 2023, 2024]
-
-# -----------------------------------------------------------------------
-# Rating factors
-# -----------------------------------------------------------------------
-ncb_years     = rng.choice([0,1,2,3,4,5], N_POLICIES,
-                           p=[0.08, 0.07, 0.10, 0.15, 0.20, 0.40])
-vehicle_group = rng.integers(1, 51, N_POLICIES)
-age_band      = rng.choice(["17-25","26-35","36-50","51-65","66+"],
-                           N_POLICIES, p=[0.11, 0.22, 0.30, 0.25, 0.12])
-annual_mileage = rng.choice(["<5k","5k-10k","10k-15k","15k+"],
-                             N_POLICIES, p=[0.18, 0.30, 0.35, 0.17])
-region        = rng.choice(["North","Midlands","London","SouthEast","SouthWest"],
-                           N_POLICIES, p=[0.20, 0.20, 0.22, 0.25, 0.13])
-accident_year = rng.choice(ACCIDENT_YEARS, N_POLICIES)
-
-# Exposure: most policies are near-annual, some are mid-term
-exposure      = np.clip(rng.beta(8, 2, N_POLICIES), 0.05, 1.0)
-
-# -----------------------------------------------------------------------
-# True claim frequency (log-linear, multiplicative)
-# -----------------------------------------------------------------------
-# We define the true DGP explicitly so we can assess model performance.
-# This is the ground truth - the model will recover an approximation of it.
-
-INTERCEPT = -2.95
-
-age_mid = {"17-25": 21, "26-35": 30, "36-50": 43, "51-65": 58, "66+": 72}
-age_effect = np.array([
-    -0.85 + 0.03 * age_mid[a] - 0.0002 * age_mid[a]**2
-    for a in age_band
-])
-
-# NCB: strong monotone effect - each year of NCD reduces frequency
-ncb_effect = -0.18 * ncb_years
-
-# Vehicle group: positive effect with superadditive interaction for young drivers
-vg_effect = 0.012 * vehicle_group
-
-# Young driver x high vehicle group superadditive interaction
-is_young  = np.array([1 if a == "17-25" else 0 for a in age_band])
-high_vg   = (vehicle_group > 35).astype(float)
-interaction_effect = 0.45 * is_young * high_vg
-
-# Region
-region_effects = {
-    "North": 0.0, "Midlands": 0.08, "London": 0.40,
-    "SouthEast": 0.22, "SouthWest": 0.05
-}
-region_effect = np.array([region_effects[r] for r in region])
-
-# Mileage: more miles, more claims
-mileage_effects = {"<5k": -0.10, "5k-10k": 0.0, "10k-15k": 0.12, "15k+": 0.28}
-mileage_effect  = np.array([mileage_effects[m] for m in annual_mileage])
-
-# True log-frequency per policy-year (claim count model)
-log_freq = (INTERCEPT + age_effect + ncb_effect + vg_effect +
-            interaction_effect + region_effect + mileage_effect)
-
-# Expected claim count = frequency * exposure
-true_freq       = np.exp(log_freq)
-expected_claims = true_freq * exposure
-claim_count     = rng.poisson(expected_claims)
-
-# -----------------------------------------------------------------------
-# Severity: log-normal with heavier tail for young high-vehicle drivers
-# -----------------------------------------------------------------------
-sev_log_mean   = 7.1 + 0.008 * vehicle_group + 0.25 * is_young * high_vg
-sev_log_sd     = 0.90 + 0.10 * is_young
-
-# Simulate severity per policy (only meaningful where claim_count > 0)
-sev_per_claim  = np.exp(rng.normal(sev_log_mean, sev_log_sd, N_POLICIES))
-incurred_loss  = claim_count * sev_per_claim  # zero for no-claim policies
-
-print(f"Policies generated:  {N_POLICIES:,}")
-print(f"Total claims:        {claim_count.sum():,}")
-print(f"Overall claim rate:  {claim_count.sum() / exposure.sum():.4f} per policy-year")
-print(f"Total incurred:      £{incurred_loss.sum():,.0f}")
-print(f"Mean severity (claims only): £{incurred_loss[claim_count>0].mean():,.0f}")
-```
-
-**What you should see:** Around 200,000 policies, 10,000-12,000 total claims (roughly 5.5% claim frequency), and a mean severity in the range of £2,000-£4,000. The exact numbers will depend on the random seed.
-
-Now assemble the Polars DataFrame:
-
-```python
-raw_pl = pl.DataFrame({
-    "policy_id":      [f"POL{i:07d}" for i in range(N_POLICIES)],
-    "accident_year":  accident_year.tolist(),
-    "ncb_years":      ncb_years.tolist(),
-    "vehicle_group":  vehicle_group.tolist(),
-    "age_band":       age_band.tolist(),
-    "annual_mileage": annual_mileage.tolist(),
-    "region":         region.tolist(),
-    "exposure":       exposure.tolist(),
-    "claim_count":    claim_count.tolist(),
-    "incurred_loss":  incurred_loss.tolist(),
-})
+# Feature engineering consistent with earlier modules
+raw_pl = raw_pl.with_columns(
+    (
+        (pl.col("driver_age") < 25) & (pl.col("vehicle_group") > 35)
+    ).cast(pl.Int32).alias("young_high_vg"),
+    (pl.col("conviction_points") > 0).cast(pl.Int32).alias("has_convictions"),
+    # Age band derived from driver_age — consistent with the banded feature approach
+    pl.when(pl.col("driver_age") < 25).then(pl.lit("17-25"))
+      .when(pl.col("driver_age") < 36).then(pl.lit("26-35"))
+      .when(pl.col("driver_age") < 51).then(pl.lit("36-50"))
+      .when(pl.col("driver_age") < 66).then(pl.lit("51-65"))
+      .otherwise(pl.lit("66+"))
+      .alias("age_band"),
+    # Mileage band derived from annual_mileage
+    pl.when(pl.col("annual_mileage") < 5_000).then(pl.lit("<5k"))
+      .when(pl.col("annual_mileage") < 10_000).then(pl.lit("5k-10k"))
+      .when(pl.col("annual_mileage") < 15_000).then(pl.lit("10k-15k"))
+      .otherwise(pl.lit("15k+"))
+      .alias("mileage_band"),
+).rename({"incurred": "incurred_loss"})
 
 # Sanity checks
-assert raw_pl.shape[0] == N_POLICIES,         "Row count mismatch"
+assert raw_pl.shape[0] == 200_000,            "Row count mismatch"
 assert raw_pl["exposure"].min() > 0,           "Zero or negative exposure"
 assert raw_pl["claim_count"].min() >= 0,       "Negative claim count"
 assert raw_pl["incurred_loss"].min() >= 0,     "Negative incurred loss"
-assert raw_pl["ncb_years"].is_between(0, 5).all(), "NCB out of range"
+assert raw_pl["ncd_years"].is_between(0, 5).all(), "NCD out of range"
 
-print("Data shape:", raw_pl.shape)
+print(f"Policies generated:  {raw_pl.shape[0]:,}")
+print(f"Total claims:        {raw_pl['claim_count'].sum():,}")
+print(f"Overall claim rate:  {raw_pl['claim_count'].sum() / raw_pl['exposure'].sum():.4f} per policy-year")
+print(f"Total incurred:      £{raw_pl['incurred_loss'].sum():,.0f}")
+
+print("\nData shape:", raw_pl.shape)
 print("\nAccident year distribution:")
 print(raw_pl.group_by("accident_year").agg(
     pl.len().alias("n_policies"),
@@ -140,6 +66,12 @@ print(raw_pl.group_by("accident_year").agg(
     (pl.col("claims") / pl.col("exposure")).round(4).alias("freq")
 ))
 ```
+
+**What you should see:** 200,000 policies, around 15,000 total claims (roughly 7-8% claim frequency), and total incurred in the £50-80m range. The accident year distribution spans 2019-2023 because the DGP assigns inception dates across a 5-year window.
+
+**Why 200,000 policies here:** Walk-forward cross-validation splits the data by accident year. With 5 years of data and training sets that grow from 1 to 4 years, a 200,000-policy book gives each fold enough claims to fit stable frequency and severity models. With only 100,000 policies, the early folds (1 year of training data, ~40,000 policies) would be too thin for reliable hyperparameter tuning.
+
+**Why the same library across all modules:** The column names, distributions, and DGP parameters are identical to Modules 2-5. A pricing team would not rebuild the synthetic portfolio for every model iteration. Consistent data means the pipeline's outputs are directly comparable to what earlier modules produced.
 
 ### Writing to Delta Lake
 

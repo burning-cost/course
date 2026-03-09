@@ -47,7 +47,7 @@ df.head(5)
 
 **What you should see:**
 
-```
+```text
 Dataset: 100,000 rows
 Accident years: 2019 - 2023
 Overall claim frequency: 0.077

@@ -2,7 +2,9 @@
 
 ### Loading the synthetic claims data
 
-We use the `insurance-datasets` library for a synthetic UK commercial property dataset. This dataset is designed to be realistic but has no real policyholder data: it is generated from the MBBEFD family with added noise and realistic censoring.
+This module uses a synthetic commercial property claims dataset — different from the motor portfolio used in Modules 2-10. Commercial property excess of loss pricing requires loss severity curves, not frequency-severity models, so the data format is different: we need individual loss amounts and the corresponding maximum probable loss (MPL) for each claim.
+
+The `insurance-datasets` library does not yet include a commercial property claims dataset. We generate the data directly here from the MBBEFD family with known parameters, which means we can verify that the fitting procedure recovers the truth.
 
 ```python
 %md
@@ -10,50 +12,34 @@ We use the `insurance-datasets` library for a synthetic UK commercial property d
 ```
 
 ```python
-# Load the synthetic commercial property claims
-# The dataset includes loss amounts, sums insured (= MPL for this dataset),
-# and policy details.
+import polars as pl
+import numpy as np
 
-try:
-    from insurance_datasets import load_commercial_property_claims
-    claims_raw = load_commercial_property_claims()
-    print(f"Loaded {len(claims_raw):,} claims from insurance-datasets")
-    use_synthetic_fallback = False
-except (ImportError, Exception):
-    # Fallback: generate synthetic MBBEFD data directly
-    print("insurance-datasets not available; generating synthetic data")
-    use_synthetic_fallback = True
+# Generate claims from a Y3-like MBBEFD distribution with noise
+# True distribution: c ≈ 2.8 (between Swiss Re Y2 and Y3 standard curves)
+# This is a typical parameter value for UK commercial property books.
+rng = np.random.default_rng(42)
+N_CLAIMS = 600
+true_dist = MBBEFDDistribution.from_c(2.8)   # close to Y3
 
-if use_synthetic_fallback:
-    # Generate claims from a Y3-like distribution with noise
-    rng = np.random.default_rng(42)
-    N_CLAIMS = 600
-    true_dist = MBBEFDDistribution.from_c(2.8)   # close to Y3
+destruction_rates_raw = true_dist.rvs(N_CLAIMS, rng=rng)
+mpl_values = rng.choice(
+    [500_000, 1_000_000, 2_000_000, 5_000_000],
+    N_CLAIMS,
+    p=[0.35, 0.35, 0.20, 0.10],
+)
+loss_amounts = destruction_rates_raw * mpl_values
 
-    destruction_rates_raw = true_dist.rvs(N_CLAIMS, rng=rng)
-    mpl_values = rng.choice(
-        [500_000, 1_000_000, 2_000_000, 5_000_000],
-        N_CLAIMS,
-        p=[0.35, 0.35, 0.20, 0.10],
-    )
-    loss_amounts = destruction_rates_raw * mpl_values
-
-    claims_df = pl.DataFrame({
-        "loss_amount": loss_amounts,
-        "mpl":         mpl_values.astype(float),
-    })
-    print(f"Generated {N_CLAIMS:,} synthetic claims")
-    print(f"True distribution: c ≈ 2.8  (between Y2 and Y3)")
-else:
-    # Convert to Polars if needed
-    if hasattr(claims_raw, "to_pandas"):
-        claims_df = claims_raw  # already Polars
-    else:
-        claims_df = pl.from_pandas(claims_raw)
-    print(claims_df.schema)
-
+claims_df = pl.DataFrame({
+    "loss_amount": loss_amounts,
+    "mpl":         mpl_values.astype(float),
+})
+print(f"Generated {N_CLAIMS:,} synthetic claims")
+print(f"True distribution: c = 2.8  (between Y2 and Y3)")
 print(f"\nClaims shape: {claims_df.shape}")
 ```
+
+**Why generate rather than load:** The MBBEFD fitting exercise is a self-contained demonstration — we need to know the true parameters to validate the fit. In a real pricing context, you would have bordereaux claims data from your underwriters. The generation here mimics what that data looks like (loss amounts and MPL per claim) without exposing any real policyholder information.
 
 ### Computing destruction rates and exploring the data
 
@@ -94,7 +80,7 @@ print()
 print(result.summary())
 ```
 
-**What you should see (with the synthetic fallback):**
+**What you should see:**
 
 ```sql
 FittingResult(g=22.4321, b=3.1847, loglik=-312.4, aic=628.8, converged=True)
