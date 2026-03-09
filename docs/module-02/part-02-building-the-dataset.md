@@ -61,9 +61,9 @@ for k, v in MOTOR_TRUE_FREQ_PARAMS.items():
 
 **Why we use a library instead of writing the generation ourselves:** Consistency. Every module in this course starts from the same portfolio. When Module 3 talks about what the GLM misses and the GBM finds, you are comparing models trained on the same data. When Module 5 adds conformal prediction intervals, the calibration dataset is the same portfolio. This is how a real pricing team works — one agreed dataset, multiple models built on top of it.
 
-### A new Python concept: f-strings
+### Reminder: f-strings
 
-The `f"..."` syntax in the print statements is an f-string. The `f` prefix tells Python to interpret `{...}` inside the string as an expression to evaluate. So `f"{df['claim_count'].sum():,}"` prints the claim count sum with thousand separators. The `:,` inside the braces is a format specifier meaning "use commas as thousand separators." The `:.3f` means "three decimal places."
+If you completed Module 1, you have already seen f-strings. The `f"..."` syntax lets Python evaluate `{...}` inside the string. The `:,` format specifier adds thousand separators; `:.3f` means three decimal places.
 
 ### Sanity-checking the data
 

@@ -109,7 +109,9 @@ There are three things happening here:
 2. `spark.createDataFrame(...)` - converts the pandas DataFrame to a Spark DataFrame
 3. `.write.format("delta").mode("overwrite").saveAsTable("policies_sample")` - writes it to a Delta table
 
-The `spark` variable is already available in any Databricks notebook - you do not need to import or create it.
+The `spark` variable is already available in any Databricks notebook — you do not need to import or create it. Spark is the distributed computing engine that Databricks runs on; it handles reading and writing data to Delta tables. You interact with it through this `spark` variable.
+
+Why the `.to_pandas()` step? Spark does not natively understand Polars DataFrames, so we convert to pandas as an intermediate format that Spark can ingest. This is a one-line overhead you will see throughout the course.
 
 You should see a confirmation message. The table is now saved and will persist even if you close the notebook or the cluster shuts down.
 

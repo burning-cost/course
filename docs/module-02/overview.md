@@ -2,7 +2,7 @@
 
 In Module 1 you created a Databricks account, started a cluster, ran your first Python cells, and saved data to a Delta table. This module builds on that foundation. By the end of it you will have fitted a working Poisson frequency GLM and a Gamma severity GLM on a realistic motor dataset, extracted factor relativities, run diagnostics, and seen how the Python output compares to what Emblem would produce.
 
-This is not a statistics lecture. We assume you already understand what a GLM is, what IRLS does, and what a relativity means. The goal here is to show you that the same model you have been running in Emblem can be reproduced in Python - with better auditability, better version control, and a cleaner integration with the rest of a modern pricing stack.
+This is not a statistics lecture. We assume you already understand what a GLM is, what IRLS (Iteratively Reweighted Least Squares — the standard algorithm for fitting GLMs) does, and what a relativity means. The goal here is to show you that the same model you have been running in Emblem can be reproduced in Python - with better auditability, better version control, and a cleaner integration with the rest of a modern pricing stack.
 
 ---
 

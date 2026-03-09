@@ -1,6 +1,6 @@
 ## Part 1: The workflow we are building
 
-We are building a motor frequency-severity model: a Poisson GLM for claim frequency and a Gamma GLM for average severity, both with log link and exposure offset. The pure premium estimate is the product: frequency times severity.
+We are building a motor frequency-severity model: a Poisson GLM for claim frequency and a Gamma GLM for average severity, both with log link and exposure offset (a correction that adjusts for each policy's earned duration — explained fully in Part 4). The pure premium estimate is the product: frequency times severity.
 
 The data pipeline, in order:
 

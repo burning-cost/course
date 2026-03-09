@@ -24,7 +24,7 @@ The course is twelve modules. Each module contains:
 | 07 | Constrained Rate Optimisation | 3-4 hours |
 | 08 | End-to-End Pricing Pipeline | 5-6 hours |
 | 09 | Demand Modelling and Price Elasticity | 4-5 hours |
-| 10 | GBM-to-GLM Distillation and Interactions | 4-5 hours |
+| 10 | Automated Interaction Detection | 4-5 hours |
 | 11 | Model Monitoring and Drift Detection | 3-4 hours |
 | 12 | Spatial Territory Rating | 4-5 hours |
 
@@ -69,7 +69,7 @@ Each module's `notebook.py` is a Databricks source-format notebook — a Python 
 1. Log into your Databricks workspace.
 2. In the left sidebar, click **Workspace**.
 3. Navigate to the folder where you want to store the notebook.
-4. Click the **kebab menu** (three dots) next to the folder name and select **Import**.
+4. Click the three-dot menu (sometimes called a kebab menu) next to the folder name and select **Import**.
 5. In the import dialog, select **File** and drag the `.py` file onto the target area, or click to browse and select it.
 6. Databricks will import the file as a notebook. It will appear in the folder with a notebook icon.
 7. Open the notebook and attach it to a running cluster before executing any cells.

@@ -8,6 +8,8 @@ A hands-on course for UK pricing actuaries and analysts. Twelve modules taking y
 
 The course is structured around the problems pricing teams actually face. Each module tackles one problem in depth, with a full tutorial, working code, and exercises with solutions.
 
+If you are coming from Emblem (Willis Towers Watson's GLM fitting tool) or Radar (their rating engine), this course shows you how to do the same work — and more — in Python on Databricks. No Emblem or Radar experience is required.
+
 All code runs on Databricks. Most modules run on the free tier. Where a paid workspace is needed, it is noted clearly.
 
 ---

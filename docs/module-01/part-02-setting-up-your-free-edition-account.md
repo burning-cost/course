@@ -34,6 +34,6 @@ Before a notebook can run, a cluster must be running. On Free Edition, you get o
 
 Click **Compute** in the left sidebar. If you have never created a cluster, it shows an empty list and a button that says **Create Compute** (or **Create cluster** - the label has changed between versions). Click it.
 
-On the cluster creation screen you will see various configuration options. On Free Edition, most of these are fixed - you cannot choose the instance type or size. What you can choose is the Databricks Runtime version. Select the latest **LTS ML** version (something like "14.3 LTS ML" or similar - LTS means Long Term Support, ML means it includes machine learning libraries). If you are not sure which to pick, choose the one with "LTS ML" in the name.
+On the cluster creation screen you will see various configuration options. On Free Edition, most of these are fixed — you cannot choose the instance type or size. What you can choose is the Databricks Runtime version. Select the latest **LTS ML** version (something like "14.3 LTS ML" or similar — LTS means Long Term Support, ML means it pre-installs machine learning libraries like scikit-learn, XGBoost, and MLflow so you do not have to install them yourself). If you are not sure which to pick, choose the one with "LTS ML" in the name.
 
 Click **Create Compute**. The cluster takes 3-5 minutes to start. The status shows "Pending" and then "Running". While it is starting, move on to the next section.
