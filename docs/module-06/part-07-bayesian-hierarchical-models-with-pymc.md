@@ -188,12 +188,12 @@ Now sample. This is the slow step — it runs MCMC:
 #   return_inferencedata=True: Return an ArviZ InferenceData object (recommended).
 #   random_seed=42:      For reproducibility.
 #
-# This takes approximately 3-6 minutes on a Databricks Community Edition cluster.
+# This takes approximately 3-6 minutes on a Databricks Free Edition cluster.
 # The progress bar shows chains running in parallel if cores > 1.
 # Do not stop it early — incomplete chains cannot be used for diagnostics.
 
 print("Fitting hierarchical Bayesian model via NUTS...")
-print("Expected time: 3-6 minutes on Databricks Community Edition.")
+print("Expected time: 3-6 minutes on Databricks Free Edition.")
 print()
 
 with hierarchical_model:
@@ -212,7 +212,7 @@ print("Sampling complete.")
 
 **What this does:** Runs NUTS sampling. PyMC will print a progress bar showing the sampling status for each chain.
 
-**Run this cell and wait.** On Databricks Community Edition (single node), this takes 3-6 minutes for 120 districts. A multi-core worker cluster would be faster — see the Databricks Deployment section later in this module.
+**Run this cell and wait.** On Databricks Free Edition (single node), this takes 3-6 minutes for 120 districts. A multi-core worker cluster would be faster — see the Databricks Deployment section later in this module.
 
 **What you should see during sampling:** A progress bar like:
 ```sql

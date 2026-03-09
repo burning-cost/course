@@ -32,7 +32,7 @@ with hierarchical_model:
     )
 ```
 
-On a 4-core single-node cluster: 4 chains run in parallel, cutting wall-clock time by roughly 3-4×. On Databricks Community Edition (typically 1-2 cores), the chains run sequentially or with limited parallelism. For production models, use a standard cluster with 4-8 cores.
+On a 4-core single-node cluster: 4 chains run in parallel, cutting wall-clock time by roughly 3-4×. On Databricks Free Edition (typically 1-2 cores), the chains run sequentially or with limited parallelism. For production models, use a standard cluster with 4-8 cores.
 
 ### MLflow tracking
 

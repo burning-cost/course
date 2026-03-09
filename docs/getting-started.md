@@ -52,7 +52,7 @@ Modules 09-12 build on the core pipeline. Each tackles a specific problem that M
 
 ## Prerequisites
 
-**Databricks.** All notebooks run on Databricks. Databricks Free Edition (community.cloud.databricks.com) is sufficient for Modules 01–05 and the classical credibility section of Module 06. The Bayesian section of Module 06 requires at least 16 GB RAM — a paid workspace with a single-node cluster is needed for that section. Module 01's Workflows exercises and Modules 07–08 also require a paid workspace.
+**Databricks.** All notebooks run on Databricks. Databricks Free Edition (databricks.com/try-databricks) is sufficient for Modules 01–05 and the classical credibility section of Module 06. The Bayesian section of Module 06 requires at least 16 GB RAM — a paid workspace with a single-node cluster is needed for that section. Module 01's Workflows exercises and Modules 07–08 also require a paid workspace.
 
 **Python.** You need to be able to read Python code and follow a data pipeline. You do not need to be a software engineer. If you have used Python for data work — loading a CSV, filtering a DataFrame, calling a function — you have enough Python for this course.
 

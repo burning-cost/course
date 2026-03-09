@@ -69,7 +69,7 @@ for k, v in TABLES.items():
 
 Unity Catalog is Databricks' governance layer for data assets. It uses a three-part naming convention: `catalog.schema.table`. The catalog is the top-level container -- in an enterprise environment it might be called `pricing` or `insurance`. The schema is a logical grouping within the catalog -- we name it by review cycle. The table is the individual data asset.
 
-In Databricks Free Edition (Community Edition), you may only have access to a legacy metastore called `hive_metastore`. In that case, your table names are two-part: `schema.table`. Change `CATALOG = "main"` to `CATALOG = "hive_metastore"` and adjust the TABLES dictionary accordingly. The rest of the pipeline runs identically either way.
+In Databricks Free Edition, you may only have access to a legacy metastore called `hive_metastore`. In that case, your table names are two-part: `schema.table`. Change `CATALOG = "main"` to `CATALOG = "hive_metastore"` and adjust the TABLES dictionary accordingly. The rest of the pipeline runs identically either way.
 
 The reason we use Unity Catalog for pricing is audit. Unity Catalog logs every read and write to every table. Combined with Delta's version history, you can reconstruct what data was read by any pipeline run on any date in the past. For Consumer Duty compliance, this is not optional -- you need to be able to demonstrate, three years later, what data informed a specific pricing decision.
 

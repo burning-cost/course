@@ -12,7 +12,7 @@ The notebook opens in the editor. You will see an empty cell with a grey triangl
 
 If your cluster from Module 5 is still running, click **Connect** in the top right and select it. If it has terminated (clusters auto-terminate after inactivity), start a new cluster: click **Connect > Create new cluster** (or go to the Compute section in the left sidebar). Use the default settings — a single-node cluster with the ML runtime (DBR 15.x) is sufficient for this module.
 
-Databricks Free Edition (Community Edition) clusters have one driver node with no workers. That is fine for everything in this module. MCMC runs on the driver node.
+Databricks Free Edition clusters have one driver node with no workers. That is fine for everything in this module. MCMC runs on the driver node.
 
 ### Installing PyMC
 
