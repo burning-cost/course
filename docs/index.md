@@ -116,11 +116,11 @@ Automated GLM interaction detection using Combined Actuarial Neural Networks (CA
 
 ---
 
-### Module 11: Exposure Curves and ILFs
+### Module 11: Model Monitoring and Drift Detection
 
-Exposure curve theory and the MBBEFD distribution family. Swiss Re standard curves, MLE fitting with truncated and censored claims data, ILF table construction, and per-risk XL layer pricing using the exposure rating method.
+Detect when a deployed pricing model degrades. Population stability index, characteristic stability index, actual-versus-expected ratios with confidence intervals, Gini drift z-test, automated traffic-light triggers, Delta Lake logging, and Databricks job scheduling for continuous monitoring.
 
-**Duration:** 5–6 hours &nbsp;&nbsp; **Requires:** Paid Databricks workspace (large-portfolio exercises)
+**Duration:** 4–5 hours &nbsp;&nbsp; **Requires:** Free Edition (scheduling exercises require paid workspace)
 
 [Go to Module 11 &rarr;](module-11/overview.md){.md-button}
 

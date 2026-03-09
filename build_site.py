@@ -143,15 +143,16 @@ MODULES = [
     },
     {
         "num": "11",
-        "dir": "module-11-exposure-curves",
-        "title": "Exposure Curves and ILFs",
+        "dir": "module-11",
+        "title": "Model Monitoring and Drift Detection",
         "description": (
-            "Exposure curve theory and the MBBEFD distribution family. "
-            "Swiss Re standard curves, MLE fitting with truncated and censored claims data, "
-            "ILF table construction, and per-risk XL layer pricing using the exposure rating method."
+            "Detect when a deployed pricing model degrades. "
+            "Population stability index, characteristic stability index, actual-versus-expected ratios "
+            "with confidence intervals, Gini drift z-test, automated traffic-light triggers, "
+            "Delta Lake logging, and Databricks job scheduling for continuous monitoring."
         ),
-        "duration": "5–6 hours",
-        "requires": "Paid Databricks workspace (large-portfolio exercises)",
+        "duration": "4–5 hours",
+        "requires": "Free Edition (scheduling exercises require paid workspace)",
     },
     {
         "num": "12",

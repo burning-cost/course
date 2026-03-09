@@ -1,6 +1,6 @@
 ## Part 11: Scheduling monitoring as a Databricks job
 
-> **Databricks tier note:** Parts 11 and 12 cover features that require a paid Databricks workspace. Workflows/Jobs, SQL Alerts, and Secrets (`dbutils.secrets`) are not available on Databricks Community Edition. If you are on Community Edition, read these parts for understanding of how production monitoring works — but you will not be able to run them. The notebook itself (Parts 1–10) runs on Community Edition without modification.
+> **Databricks tier note:** Parts 11 and 12 cover features that require a paid Databricks workspace. Workflows/Jobs, SQL Alerts, and Secrets (`dbutils.secrets`) are not available on Databricks Free Edition. If you are on Free Edition, read these parts for understanding of how production monitoring works — but you will not be able to run them. The notebook itself (Parts 1-10) runs on Free Edition without modification.
 
 ### Why manual runs are not enough
 
