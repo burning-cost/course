@@ -12,24 +12,28 @@ area,B,1.1080
 In a new cell, type this and run it (Shift+Enter):
 
 ```python
-def to_radar_csv(rels_df: pd.DataFrame, output_path: str) -> None:
+def to_radar_csv(rels_df: pl.DataFrame, output_path: str) -> None:
     """
     Export relativities in Radar factor table import format.
 
-    Expects a pandas DataFrame with columns: feature, level, relativity.
+    Expects a Polars DataFrame with columns: feature, level, relativity.
     Continuous features should be excluded or pre-banded.
     """
-    radar_df = rels_df[["feature", "level", "relativity"]].copy()
-    radar_df.columns = ["Factor", "Level", "Relativity"]
-    radar_df["Relativity"] = radar_df["Relativity"].round(4)
-    radar_df["Level"] = radar_df["Level"].astype(str)
-    radar_df.to_csv(output_path, index=False)
+    radar_df = (
+        rels_df.select("feature", "level", "relativity")
+        .rename({"feature": "Factor", "level": "Level", "relativity": "Relativity"})
+        .with_columns(
+            pl.col("Relativity").round(4),
+            pl.col("Level").cast(pl.Utf8),
+        )
+    )
+    radar_df.write_csv(output_path)
     print(f"Written {len(radar_df)} rows to {output_path}")
 
 
 # Export categorical features only
 # Continuous features (ncd_years is treated as categorical here; driver_age needs banding first)
-cat_rels_for_export = rels[rels["feature"].isin(CAT_FEATURES)]
+cat_rels_for_export = rels.filter(pl.col("feature").is_in(CAT_FEATURES))
 to_radar_csv(cat_rels_for_export, "/dbfs/tmp/gbm_relativities_radar.csv")
 ```
 
@@ -42,9 +46,8 @@ Written 8 rows to /dbfs/tmp/gbm_relativities_radar.csv
 Verify the output looks correct. In a new cell, type this and run it (Shift+Enter):
 
 ```python
-import pandas as pd
-radar_check = pd.read_csv("/dbfs/tmp/gbm_relativities_radar.csv")
-print(radar_check.to_string(index=False))
+radar_check = pl.read_csv("/dbfs/tmp/gbm_relativities_radar.csv")
+print(radar_check)
 ```
 
 You will see the Radar-format CSV contents. Verify that:

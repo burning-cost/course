@@ -73,7 +73,7 @@ Now look at this by channel - the segmentation that matters most for commercial 
 sensitivity_pl = (
     df_renewals
     .select(["channel", "ncd_years"])
-    .with_columns(pl.Series("sensitivity", sensitivity.values))
+    .with_columns(pl.Series("sensitivity", sensitivity.to_numpy()))
     .group_by("channel")
     .agg(pl.col("sensitivity").mean().alias("mean_sensitivity"))
     .sort("mean_sensitivity")

@@ -102,8 +102,8 @@ from sklearn.metrics import roc_auc_score
 
 y_true = df_quotes["converted"].to_numpy()
 
-auc_logistic = roc_auc_score(y_true, conv_logistic.predict_proba(df_quotes).values)
-auc_catboost = roc_auc_score(y_true, conv_catboost.predict_proba(df_quotes).values)
+auc_logistic = roc_auc_score(y_true, conv_logistic.predict_proba(df_quotes).to_numpy())
+auc_catboost = roc_auc_score(y_true, conv_catboost.predict_proba(df_quotes).to_numpy())
 
 print(f"Logistic AUC: {auc_logistic:.4f}")
 print(f"CatBoost AUC: {auc_catboost:.4f}")

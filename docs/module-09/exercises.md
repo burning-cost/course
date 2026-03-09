@@ -85,7 +85,7 @@ for rank in range(1, 7):
         pl.lit("pcw_confused").alias("channel"),
     ])
     results.append({"rank_position": rank,
-                    "conv_prob": float(conv_model.predict_proba(row).values[0])})
+                    "conv_prob": float(conv_model.predict_proba(row).to_numpy()[0])})
 pl.DataFrame(results)
 ```
 
@@ -285,7 +285,7 @@ sensitivity = retention_model.price_sensitivity(df_renewals)
 sensitivity_pl = (
     df_renewals
     .select("tenure_band")
-    .with_columns(pl.Series("sensitivity", sensitivity.values))
+    .with_columns(pl.Series("sensitivity", sensitivity.to_numpy()))
     .group_by("tenure_band")
     .agg([
         pl.col("sensitivity").mean().alias("mean"),
@@ -492,8 +492,8 @@ for pr in price_ratios:
         pl.lit(np.log(pr)).alias("log_price_ratio"),
         pl.lit(pr).alias("price_ratio"),
     ])
-    results_logistic.append(float(conv_logistic.predict_proba(row).values[0]))
-    results_catboost.append(float(conv_catboost.predict_proba(row).values[0]))
+    results_logistic.append(float(conv_logistic.predict_proba(row).to_numpy()[0]))
+    results_catboost.append(float(conv_catboost.predict_proba(row).to_numpy()[0]))
 ```
 
 Plot the two demand curves side by side. At what loading does each model predict a 10% conversion rate? If the 10% conversion loading differs by more than 2%, that is a commercially significant gap. If it differs by less than 0.5%, the models are interchangeable for this segment.
@@ -507,8 +507,8 @@ Plot the two demand curves side by side. At what loading does each model predict
 from sklearn.metrics import roc_auc_score
 
 y_true = df_quotes["converted"].to_numpy()
-auc_l = roc_auc_score(y_true, conv_logistic.predict_proba(df_quotes).values)
-auc_c = roc_auc_score(y_true, conv_catboost.predict_proba(df_quotes).values)
+auc_l = roc_auc_score(y_true, conv_logistic.predict_proba(df_quotes).to_numpy())
+auc_c = roc_auc_score(y_true, conv_catboost.predict_proba(df_quotes).to_numpy())
 
 print(f"Logistic AUC: {auc_l:.4f}  Gini: {2*auc_l-1:.4f}")
 print(f"CatBoost AUC: {auc_c:.4f}  Gini: {2*auc_c-1:.4f}")
