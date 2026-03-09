@@ -717,71 +717,71 @@
          <lastmod>2026-03-09</lastmod>
     </url>
     <url>
-         <loc>https://burning-cost.github.io/course/module-11/part-01-the-problem-in-plain-english/</loc>
+         <loc>https://burning-cost.github.io/course/module-11/part-01-why-monitoring-matters/</loc>
          <lastmod>2026-03-09</lastmod>
     </url>
     <url>
-         <loc>https://burning-cost.github.io/course/module-11/part-02-setting-up-your-databricks-notebook/</loc>
+         <loc>https://burning-cost.github.io/course/module-11/part-02-setting-up-the-notebook/</loc>
          <lastmod>2026-03-09</lastmod>
     </url>
     <url>
-         <loc>https://burning-cost.github.io/course/module-11/part-03-what-is-a-destruction-rate/</loc>
+         <loc>https://burning-cost.github.io/course/module-11/part-03-what-is-model-drift/</loc>
          <lastmod>2026-03-09</lastmod>
     </url>
     <url>
-         <loc>https://burning-cost.github.io/course/module-11/part-04-the-exposure-curve-defined-properly/</loc>
+         <loc>https://burning-cost.github.io/course/module-11/part-04-population-stability-index/</loc>
          <lastmod>2026-03-09</lastmod>
     </url>
     <url>
-         <loc>https://burning-cost.github.io/course/module-11/part-05-the-mbbefd-distribution-family/</loc>
+         <loc>https://burning-cost.github.io/course/module-11/part-05-characteristic-stability-index/</loc>
          <lastmod>2026-03-09</lastmod>
     </url>
     <url>
-         <loc>https://burning-cost.github.io/course/module-11/part-06-the-swiss-re-c-parameter-and-standard-curves/</loc>
+         <loc>https://burning-cost.github.io/course/module-11/part-06-actual-vs-expected-ratios/</loc>
          <lastmod>2026-03-09</lastmod>
     </url>
     <url>
-         <loc>https://burning-cost.github.io/course/module-11/part-07-exploring-the-standard-curves-in-code/</loc>
+         <loc>https://burning-cost.github.io/course/module-11/part-07-gini-drift-detection/</loc>
          <lastmod>2026-03-09</lastmod>
     </url>
     <url>
-         <loc>https://burning-cost.github.io/course/module-11/part-08-fitting-an-mbbefd-curve-to-claims-data/</loc>
+         <loc>https://burning-cost.github.io/course/module-11/part-08-building-a-monitoring-report/</loc>
          <lastmod>2026-03-09</lastmod>
     </url>
     <url>
-         <loc>https://burning-cost.github.io/course/module-11/part-09-truncated-and-censored-data/</loc>
+         <loc>https://burning-cost.github.io/course/module-11/part-09-interpreting-the-report/</loc>
          <lastmod>2026-03-09</lastmod>
     </url>
     <url>
-         <loc>https://burning-cost.github.io/course/module-11/part-10-goodness-of-fit/</loc>
+         <loc>https://burning-cost.github.io/course/module-11/part-10-writing-results-to-delta/</loc>
          <lastmod>2026-03-09</lastmod>
     </url>
     <url>
-         <loc>https://burning-cost.github.io/course/module-11/part-11-building-ilf-tables/</loc>
+         <loc>https://burning-cost.github.io/course/module-11/part-11-scheduling-monitoring-as-a-databricks-job/</loc>
          <lastmod>2026-03-09</lastmod>
     </url>
     <url>
-         <loc>https://burning-cost.github.io/course/module-11/part-12-excess-loss-factors/</loc>
+         <loc>https://burning-cost.github.io/course/module-11/part-12-setting-up-alerts/</loc>
          <lastmod>2026-03-09</lastmod>
     </url>
     <url>
-         <loc>https://burning-cost.github.io/course/module-11/part-13-per-risk-xl-treaty-rating/</loc>
+         <loc>https://burning-cost.github.io/course/module-11/part-13-recalibration-triggers/</loc>
          <lastmod>2026-03-09</lastmod>
     </url>
     <url>
-         <loc>https://burning-cost.github.io/course/module-11/part-14-lee-diagrams/</loc>
+         <loc>https://burning-cost.github.io/course/module-11/part-14-connecting-to-the-pricing-pipeline/</loc>
          <lastmod>2026-03-09</lastmod>
     </url>
     <url>
-         <loc>https://burning-cost.github.io/course/module-11/part-15-writing-fitted-curves-to-delta/</loc>
+         <loc>https://burning-cost.github.io/course/module-11/part-15-regulatory-reporting/</loc>
          <lastmod>2026-03-09</lastmod>
     </url>
     <url>
-         <loc>https://burning-cost.github.io/course/module-11/part-16-uk-context-the-london-market-and-commercial-lines/</loc>
+         <loc>https://burning-cost.github.io/course/module-11/part-16-what-we-have-not-covered/</loc>
          <lastmod>2026-03-09</lastmod>
     </url>
     <url>
-         <loc>https://burning-cost.github.io/course/module-11/part-17-what-we-have-not-covered-and-honest-limitations/</loc>
+         <loc>https://burning-cost.github.io/course/module-11/part-17-summary/</loc>
          <lastmod>2026-03-09</lastmod>
     </url>
     <url>
