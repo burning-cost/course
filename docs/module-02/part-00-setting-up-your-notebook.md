@@ -12,16 +12,17 @@ Check the cluster selector at the top of the notebook. If it says "Detached," cl
 
 ### Installing the libraries
 
-The three libraries we need for this module are:
+The libraries we need for this module are:
 
+- **insurance-datasets** - the synthetic UK insurance portfolio used throughout this course. It provides a standard 100,000-policy motor dataset with a known data generating process so you can validate your GLM coefficients against the ground truth.
 - **Polars** - for data manipulation. Think of it as Excel tables in Python. You define calculations on columns, filter rows, and group data - but it handles millions of rows instantly and the syntax is explicit about what is happening. We introduced Polars briefly in Module 1.
-- **numpy** - for numerical computing. Arrays of numbers, mathematical functions (exp, log, etc.), and the random number generators we use to build our synthetic dataset. You will see it abbreviated as `np` throughout.
+- **numpy** - for numerical computing. Arrays of numbers, mathematical functions (exp, log, etc.). You will see it abbreviated as `np` throughout.
 - **statsmodels** - the library that fits the GLMs. It contains Poisson, Gamma, Tweedie, and quasi-Poisson families, uses IRLS exactly as Emblem does, and produces coefficient tables, deviance statistics, and confidence intervals. You will see it abbreviated as `sm` or `smf`.
 
 In a new cell at the top of your notebook, type this and run it (Shift+Enter):
 
 ```python
-%pip install polars statsmodels scipy matplotlib
+%pip install polars statsmodels scipy matplotlib insurance-datasets
 ```
 
 You will see a stream of output as pip downloads and installs the packages. Wait for it to finish. At the end it says something like:
@@ -50,9 +51,11 @@ import numpy as np
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
 import matplotlib.pyplot as plt
+from insurance_datasets import load_motor
 
 print(f"Polars version: {pl.__version__}")
 print(f"Statsmodels version: {sm.__version__}")
+print(f"insurance-datasets: load_motor available")
 print("All imports OK")
 ```
 

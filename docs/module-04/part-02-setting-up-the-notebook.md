@@ -15,7 +15,7 @@ If the cluster is not in the list, go to **Compute** in the left sidebar, find y
 In the first cell, type this and run it (Shift+Enter):
 
 ```python
-%pip install "shap-relativities[all]" catboost polars statsmodels mlflow --quiet
+%pip install "shap-relativities[all]" catboost polars statsmodels mlflow insurance-datasets --quiet
 ```
 
 You will see pip output for 30-60 seconds. Wait until you see:
@@ -39,6 +39,7 @@ Here is what each library does:
 - **polars** - the data manipulation library from previous modules.
 - **statsmodels** - for fitting the benchmark GLM. We compare GBM relativities to GLM relativities directly.
 - **mlflow** - for logging the relativities table and validation results alongside the model.
+- **insurance-datasets** - the standard synthetic UK motor portfolio used across all modules.
 
 ### Confirm the imports work
 
@@ -54,11 +55,13 @@ import catboost as cb
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
 from shap_relativities import SHAPRelativities
+from insurance_datasets import load_motor
 
 print(f"Polars:          {pl.__version__}")
 print(f"Statsmodels:     {sm.__version__}")
 print(f"MLflow:          {mlflow.__version__}")
 print("SHAPRelativities: imported OK")
+print("insurance-datasets: load_motor available")
 print("All imports OK")
 ```
 

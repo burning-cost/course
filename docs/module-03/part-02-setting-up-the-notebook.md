@@ -15,7 +15,7 @@ If the cluster is not running, go to **Compute** in the left sidebar, find your 
 The libraries we need for this module are not all pre-installed on Databricks. In the first cell of your notebook, type this and run it (Shift+Enter):
 
 ```python
-%pip install catboost optuna insurance-cv mlflow polars
+%pip install catboost optuna insurance-cv mlflow polars insurance-datasets
 ```
 
 You will see a long stream of output as pip downloads and installs each package. Wait for it to finish completely. At the end you will see:
@@ -39,6 +39,7 @@ Here is what each library does:
 - **insurance-cv** - a small library that generates walk-forward cross-validation splits specifically designed for insurance data, with an IBNR buffer year. We explain this fully in Part 6.
 - **mlflow** - the experiment tracking library built into Databricks. It logs model parameters, metrics, and the model artefact itself so every run is reproducible and auditable.
 - **polars** - the data manipulation library from Module 2. If it is already at cluster level, the install is a no-op.
+- **insurance-datasets** - the standard synthetic UK motor portfolio used across all modules. Loaded once, shared everywhere.
 
 ### Confirm the imports work
 
@@ -57,10 +58,12 @@ from catboost import CatBoostRegressor, Pool
 from sklearn.metrics import roc_auc_score
 from insurance_cv import WalkForwardCV
 from mlflow.tracking import MlflowClient
+from insurance_datasets import load_motor
 
 print(f"Polars:   {pl.__version__}")
 print(f"CatBoost: __version__ not exposed, but imported OK")
 print(f"Optuna:   {optuna.__version__}")
+print(f"insurance-datasets: load_motor available")
 print("All imports OK")
 ```
 

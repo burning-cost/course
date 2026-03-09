@@ -25,6 +25,7 @@ In the first cell, type this and run it with Shift+Enter:
     "insurance-cv" \
     "insurance-conformal[catboost]" \
     "rate-optimiser" \
+    insurance-datasets \
     --quiet
 ```
 
@@ -47,6 +48,7 @@ import mlflow
 import optuna
 from catboost import CatBoostRegressor, Pool
 from insurance_conformal import InsuranceConformalPredictor
+from insurance_datasets import load_motor
 
 print(f"Polars:   {pl.__version__}")
 print(f"NumPy:    {np.__version__}")
@@ -54,6 +56,7 @@ print(f"MLflow:   {mlflow.__version__}")
 print(f"Optuna:   {optuna.__version__}")
 print("CatBoost: OK")
 print("InsuranceConformalPredictor: OK")
+print("insurance-datasets: load_motor available")
 print("All libraries ready.")
 ```
 
