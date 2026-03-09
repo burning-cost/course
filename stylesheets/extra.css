@@ -1,0 +1,200 @@
+/*
+  Burning Cost course site — custom theme
+  Matches the main landing page palette exactly.
+
+  Landing page palette:
+    --navy:         #080b14
+    --navy-mid:     #0d1121
+    --navy-card:    #111828
+    --navy-border:  #1c2338
+    --accent:       #4f7ef8   (primary blue)
+    --accent-2:     #7c5cfc   (purple)
+    --text-primary: #eef0f6
+    --text-secondary: #8b93ac
+*/
+
+/* === Override MkDocs Material primary palette === */
+:root,
+[data-md-color-scheme="default"] {
+  /* Primary colour — matches landing page --accent */
+  --md-primary-fg-color:          #4f7ef8;
+  --md-primary-fg-color--light:   #6690f9;
+  --md-primary-fg-color--dark:    #3a6af0;
+
+  /* Accent — matches landing page --accent-2 */
+  --md-accent-fg-color:           #7c5cfc;
+  --md-accent-fg-color--light:    #9476fd;
+  --md-accent-fg-color--dark:     #6344e8;
+
+  /* Typeset links */
+  --md-typeset-a-color:           #4f7ef8;
+}
+
+/* Dark scheme colours */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color:          #4f7ef8;
+  --md-primary-fg-color--light:   #6690f9;
+  --md-primary-fg-color--dark:    #3a6af0;
+  --md-accent-fg-color:           #7c5cfc;
+  --md-typeset-a-color:           #6690f9;
+
+  /* Match the landing page dark navy as background */
+  --md-default-bg-color:          #0d1121;
+  --md-default-fg-color:          #eef0f6;
+  --md-default-fg-color--light:   #8b93ac;
+  --md-default-fg-color--lighter: #4d5670;
+  --md-default-fg-color--lightest: #1c2338;
+
+  /* Code blocks */
+  --md-code-bg-color:             #111828;
+  --md-code-fg-color:             #eef0f6;
+}
+
+/* === Header === */
+.md-header {
+  background-color: #080b14;
+  box-shadow: 0 1px 0 0 #1c2338;
+}
+
+/* Header title */
+.md-header__title {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* === Navigation tabs === */
+.md-tabs {
+  background-color: #0d1121;
+  border-bottom: 1px solid #1c2338;
+}
+
+.md-tabs__link {
+  color: #8b93ac;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.md-tabs__link--active,
+.md-tabs__link:hover {
+  color: #eef0f6;
+}
+
+/* Active tab underline — use the blue accent */
+.md-tabs__link--active::after {
+  background-color: #4f7ef8;
+}
+
+/* === Sidebar === */
+.md-nav__title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #4d5670;
+}
+
+/* === "Back to Burning Cost" breadcrumb link in header === */
+.bc-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #8b93ac;
+  text-decoration: none;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #1c2338;
+  border-radius: 4px;
+  transition: color 0.15s, border-color 0.15s;
+  margin-right: 0.5rem;
+}
+
+.bc-back-link:hover {
+  color: #eef0f6;
+  border-color: #4f7ef8;
+  text-decoration: none;
+}
+
+/* === Typography — match Inter from landing page === */
+.md-typeset {
+  font-size: 0.9rem;
+  line-height: 1.75;
+}
+
+.md-typeset h1 {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #eef0f6;
+}
+
+.md-typeset h2 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  border-bottom: 1px solid #1c2338;
+  padding-bottom: 0.4rem;
+}
+
+/* Code font — matches JetBrains Mono from landing page */
+.md-typeset code,
+.md-typeset pre code {
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.83rem;
+}
+
+/* === Buttons / CTAs — use landing page primary === */
+.md-button {
+  background-color: #4f7ef8;
+  border-color: #4f7ef8;
+  color: #fff;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  letter-spacing: 0.01em;
+  transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.md-button:hover {
+  background-color: #3a6af0;
+  border-color: #3a6af0;
+  color: #fff;
+  box-shadow: 0 0 16px rgba(79, 126, 248, 0.35);
+}
+
+.md-button--secondary {
+  background-color: transparent;
+  border-color: #4f7ef8;
+  color: #4f7ef8;
+}
+
+.md-button--secondary:hover {
+  background-color: rgba(79, 126, 248, 0.08);
+  color: #6690f9;
+}
+
+/* === Admonitions — tip/note accent colour === */
+.md-typeset .admonition.tip,
+.md-typeset details.tip {
+  border-color: #4f7ef8;
+}
+
+.md-typeset .admonition.tip > .admonition-title,
+.md-typeset details.tip > summary {
+  background-color: rgba(79, 126, 248, 0.08);
+}
+
+.md-typeset .admonition.tip > .admonition-title::before,
+.md-typeset details.tip > summary::before {
+  color: #4f7ef8;
+}
+
+/* === Footer === */
+.md-footer {
+  background-color: #080b14;
+  border-top: 1px solid #1c2338;
+}
+
+.md-footer-meta {
+  background-color: #080b14;
+}
