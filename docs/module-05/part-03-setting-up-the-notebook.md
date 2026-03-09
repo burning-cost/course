@@ -15,7 +15,7 @@ If your cluster is not in the list, it may not be running. Go to **Compute** in 
 In the first cell of your notebook, type this and run it by pressing **Shift+Enter**:
 
 ```python
-%pip install "insurance-conformal[catboost]" catboost polars mlflow --quiet
+%pip install "insurance-conformal[catboost]" catboost polars mlflow insurance-datasets --quiet
 ```
 
 You will see pip installation output scrolling for 30-60 seconds. Wait for it to finish completely. The last few lines will say something like:
@@ -41,6 +41,7 @@ This restarts the Python session so the newly installed packages are available. 
 - **catboost** - the gradient boosted tree library from Modules 3 and 4. We use it here for the base Tweedie model.
 - **polars** - the data manipulation library from all previous modules.
 - **mlflow** - the experiment tracking library built into Databricks.
+- **insurance-datasets** - the standard synthetic UK motor portfolio used across all modules.
 
 ### Confirm the imports work
 
@@ -54,11 +55,13 @@ import mlflow
 from datetime import date
 from catboost import CatBoostRegressor, Pool
 from insurance_conformal import InsuranceConformalPredictor
+from insurance_datasets import load_motor
 
 print(f"Polars:   {pl.__version__}")
 print(f"MLflow:   {mlflow.__version__}")
 print(f"NumPy:    {np.__version__}")
 print("InsuranceConformalPredictor: imported OK")
+print("insurance-datasets: load_motor available")
 print("All imports OK")
 ```
 
@@ -69,6 +72,7 @@ Polars:   0.x.x
 MLflow:   2.x.x
 NumPy:    1.x.x
 InsuranceConformalPredictor: imported OK
+insurance-datasets: load_motor available
 All imports OK
 ```
 
