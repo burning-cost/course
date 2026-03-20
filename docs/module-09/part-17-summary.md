@@ -25,8 +25,8 @@ The FCA context means that these tools have regulatory as well as commercial val
 
 | Library | Version | Purpose |
 |---------|---------|---------|
-| `insurance-demand` | latest | Conversion, retention, and global elasticity models |
-| `insurance-elasticity` | latest | Heterogeneous elasticity with CausalForestDML, optimiser, audit |
+| `insurance-optimise` (via `insurance_optimise.demand`) | latest | Conversion, retention, and global elasticity models |
+| `insurance-causal` (via `insurance_causal.elasticity`) | latest | Heterogeneous elasticity with CausalForestDML, optimiser, audit |
 | `catboost` | 1.2+ | Nuisance models in DML, conversion and retention classifiers |
 | `econml` | 0.15+ | CausalForestDML estimator |
 | `polars` | 0.20+ | Data manipulation |

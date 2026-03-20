@@ -1,6 +1,6 @@
 ## Part 8: Causal elasticity estimation with DML
 
-Now we fit the DML model. The `insurance-demand` library's `ElasticityEstimator` class handles the whole pipeline: building the nuisance models, cross-fitting, and extracting the elasticity estimate with confidence intervals.
+Now we fit the DML model. The `insurance_optimise.demand` submodule's `ElasticityEstimator` class handles the whole pipeline: building the nuisance models, cross-fitting, and extracting the elasticity estimate with confidence intervals.
 
 ### The treatment variable for conversion elasticity
 
@@ -22,7 +22,7 @@ A `log_price_ratio` of 0.0 means the quoted price equals the technical premium. 
 ### Fitting the conversion elasticity model
 
 ```python
-from insurance_demand import ElasticityEstimator
+from insurance_optimise.demand import ElasticityEstimator
 
 est_conversion = ElasticityEstimator(
     outcome_col="converted",

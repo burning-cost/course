@@ -1,6 +1,6 @@
 ## Part 14: Connecting to the rate optimiser
 
-In Module 7 you used the `rate-optimiser` library, which required a demand callable as one of its inputs. The `ConversionModel` from `insurance-demand` provides exactly this.
+In Module 7 you used the `rate-optimiser` library, which required a demand callable as one of its inputs. The `ConversionModel` from `insurance_optimise.demand` provides exactly this.
 
 This part shows how to connect the demand model to the rate optimiser so that the Module 7 pipeline uses a properly calibrated elasticity rather than a manually specified coefficient.
 

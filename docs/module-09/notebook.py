@@ -33,7 +33,7 @@
 
 # COMMAND ----------
 
-%pip install insurance-demand insurance-elasticity catboost econml polars --quiet
+%pip install insurance-optimise insurance-causal catboost econml polars --quiet
 # Both commands must be in the same cell so the restart follows the install.
 
 # COMMAND ----------
@@ -51,17 +51,17 @@ import matplotlib.pyplot as plt
 import mlflow
 from sklearn.metrics import roc_auc_score
 
-from insurance_demand import ConversionModel, RetentionModel, ElasticityEstimator
-from insurance_demand import DemandCurve, OptimalPrice
-from insurance_demand.datasets import generate_conversion_data, generate_retention_data
-from insurance_demand.compliance import ENBPChecker
+from insurance_optimise.demand import ConversionModel, RetentionModel, ElasticityEstimator
+from insurance_optimise.demand import DemandCurve, OptimalPrice
+from insurance_optimise.demand.datasets import generate_conversion_data, generate_retention_data
+from insurance_optimise.demand.compliance import ENBPChecker
 
-from insurance_elasticity.data import make_renewal_data
-from insurance_elasticity.fit import RenewalElasticityEstimator
-from insurance_elasticity.diagnostics import ElasticityDiagnostics
-from insurance_elasticity.surface import ElasticitySurface
-from insurance_elasticity.optimise import RenewalPricingOptimiser
-from insurance_elasticity.demand import demand_curve, plot_demand_curve
+from insurance_causal.elasticity.data import make_renewal_data
+from insurance_causal.elasticity.fit import RenewalElasticityEstimator
+from insurance_causal.elasticity.diagnostics import ElasticityDiagnostics
+from insurance_causal.elasticity.surface import ElasticitySurface
+from insurance_causal.elasticity.optimise import RenewalPricingOptimiser
+from insurance_causal.elasticity.demand import demand_curve, plot_demand_curve
 
 print(f"Today: {date.today()}")
 print(f"NumPy:   {np.__version__}")
@@ -674,7 +674,7 @@ for col in audit.columns:
 
 # COMMAND ----------
 
-# ENBPChecker from insurance-demand: compliance officer view
+# ENBPChecker from insurance_optimise.demand: compliance officer view
 # This is a higher-level wrapper producing summary reports.
 df_renewals_for_checker = df_renewals.rename({
     "enbp": "nb_equivalent_price",

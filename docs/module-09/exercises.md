@@ -21,15 +21,15 @@ import numpy as np
 import polars as pl
 from scipy.special import expit
 
-from insurance_demand import ConversionModel, RetentionModel, ElasticityEstimator
-from insurance_demand.datasets import generate_conversion_data, generate_retention_data
-from insurance_demand.compliance import ENBPChecker
+from insurance_optimise.demand import ConversionModel, RetentionModel, ElasticityEstimator
+from insurance_optimise.demand.datasets import generate_conversion_data, generate_retention_data
+from insurance_optimise.demand.compliance import ENBPChecker
 
-from insurance_elasticity.data import make_renewal_data
-from insurance_elasticity.fit import RenewalElasticityEstimator
-from insurance_elasticity.diagnostics import ElasticityDiagnostics
-from insurance_elasticity.optimise import RenewalPricingOptimiser
-from insurance_elasticity.demand import demand_curve
+from insurance_causal.elasticity.data import make_renewal_data
+from insurance_causal.elasticity.fit import RenewalElasticityEstimator
+from insurance_causal.elasticity.diagnostics import ElasticityDiagnostics
+from insurance_causal.elasticity.optimise import RenewalPricingOptimiser
+from insurance_causal.elasticity.demand import demand_curve
 
 # Conversion dataset: 150,000 quotes, true elasticity = -2.0
 df_quotes = generate_conversion_data(n_quotes=150_000, seed=42)
@@ -1195,14 +1195,14 @@ ElasticityDiagnostics().treatment_variation_report(
 # -> TreatmentVariationReport: .weak_treatment, .variation_fraction, .summary()
 ```
 
-**Elasticity estimator (insurance-demand):**
+**Elasticity estimator (insurance_optimise.demand):**
 ```python
 ElasticityEstimator(outcome_col="converted", treatment_col="log_price_ratio",
                     feature_cols=[...], n_folds=5)
 .fit(df) .summary() .elasticity_ .elasticity_ci_ .sensitivity_analysis()
 ```
 
-**Elasticity estimator (insurance-elasticity):**
+**Elasticity estimator (insurance_causal.elasticity):**
 ```python
 RenewalElasticityEstimator(cate_model="causal_forest"|"linear_dml",
                             n_estimators=200, catboost_iterations=500, n_folds=5)

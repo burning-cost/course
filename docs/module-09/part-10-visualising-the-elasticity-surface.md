@@ -8,7 +8,7 @@ The elasticity surface shows how price sensitivity varies across two dimensions 
 ```
 
 ```python
-from insurance_elasticity.surface import ElasticitySurface
+from insurance_causal.elasticity.surface import ElasticitySurface
 
 surface = ElasticitySurface(est_renewal)
 

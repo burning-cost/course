@@ -8,7 +8,7 @@ The demand curve translates the elasticity model into a concrete view of the vol
 ```
 
 ```python
-from insurance_elasticity.demand import demand_curve, plot_demand_curve
+from insurance_causal.elasticity.demand import demand_curve, plot_demand_curve
 
 # Sweep price changes from -25% to +25%
 demand_df = demand_curve(

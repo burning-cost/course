@@ -87,7 +87,7 @@ Several modules use open-source pricing libraries built by Burning Cost. Install
 On Databricks, run this in a notebook cell before working through the course:
 
 ```python
-%pip install insurance-datasets insurance-cv shap-relativities insurance-conformal credibility bayesian-pricing rate-optimiser insurance-demand insurance-elasticity insurance-interactions insurance-monitoring insurance-spatial --quiet
+%pip install insurance-datasets insurance-cv shap-relativities insurance-conformal credibility bayesian-pricing rate-optimiser insurance-optimise insurance-causal insurance-interactions insurance-monitoring insurance-spatial --quiet
 ```
 
 Then restart the Python kernel:
@@ -111,7 +111,7 @@ Each notebook includes an install cell at the top that installs only what that m
 | 06 | `credibility`, `bayesian-pricing`, `pymc`, `arviz` |
 | 07 | `rate-optimiser` |
 | 08 | All of the above |
-| 09 | `insurance-demand`, `insurance-elasticity`, `catboost` |
+| 09 | `insurance-optimise` (via `insurance_optimise.demand`), `insurance-causal` (via `insurance_causal.elasticity`), `catboost` |
 | 10 | `insurance-interactions`, `catboost`, `glum` |
 | 11 | `insurance-monitoring`, `catboost` |
 | 12 | `insurance-spatial`, `pymc` |

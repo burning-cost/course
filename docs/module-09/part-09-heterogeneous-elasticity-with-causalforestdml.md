@@ -4,7 +4,7 @@ The global ATE tells you the portfolio-average elasticity. But the actual commer
 
 The answer matters for pricing decisions. If NCD-0 customers (typically young, first year of driving) are much more elastic than NCD-5 customers, you should price the two groups differently. A uniform price increase hits the elastic group hard and barely affects the inelastic group.
 
-For this analysis we switch to the `insurance-elasticity` library's `RenewalElasticityEstimator`, which wraps `econml`'s `CausalForestDML` to estimate per-customer heterogeneous treatment effects (CATE).
+For this analysis we switch to the `insurance_causal.elasticity` submodule's `RenewalElasticityEstimator`, which wraps `econml`'s `CausalForestDML` to estimate per-customer heterogeneous treatment effects (CATE).
 
 **Time note:** The CausalForestDML fit below takes 5--8 minutes on Databricks Free Edition. After submitting the cell, read the GATE interpretation section (Part 10) while the model trains -- the content is directly relevant to reading the output.
 

@@ -21,7 +21,7 @@ The survival model requires a `duration_col` column (years since first policy) a
 
 ### Instrumental variables
 
-When the near-deterministic price problem is present but you have a valid instrument - an external variable that affects price but is independent of individual renewal probability - you can use the IV variant of DML (PLIV). The `ElasticityEstimator` in `insurance-demand` supports this via the `instrument_col` parameter.
+When the near-deterministic price problem is present but you have a valid instrument - an external variable that affects price but is independent of individual renewal probability - you can use the IV variant of DML (PLIV). The `ElasticityEstimator` in `insurance_optimise.demand` supports this via the `instrument_col` parameter.
 
 Valid instruments in practice include:
 - A bulk rate change indicator (all policies subject to a Q1 2024 10% increase share this exogenous variation)
@@ -30,4 +30,4 @@ Valid instruments in practice include:
 
 ### Multi-product demand
 
-If you sell multiple lines (motor and home, for example), there are cross-price effects: a customer who lapses their motor policy may also cancel their home policy. Single-product demand models miss these. The `insurance-demand` library currently handles single-product demand; multi-product demand is a research-stage problem.
+If you sell multiple lines (motor and home, for example), there are cross-price effects: a customer who lapses their motor policy may also cancel their home policy. Single-product demand models miss these. The `insurance_optimise.demand` submodule currently handles single-product demand; multi-product demand is a research-stage problem.

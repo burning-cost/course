@@ -55,14 +55,14 @@ for col in audit.columns:
 
 The complete audit trail should include the run date, the actuary who signed off, the version of the demand model used, and the ENBP source. These are governance additions on top of the per-policy data.
 
-### Using the insurance-demand compliance tools
+### Using the insurance-optimise demand compliance tools
 
-The `insurance-demand` library provides additional compliance utilities through its `ENBPChecker` class. This is a higher-level wrapper that produces summary reports useful for compliance officers rather than actuaries:
+The `insurance_optimise.demand` submodule provides additional compliance utilities through its `ENBPChecker` class. This is a higher-level wrapper that produces summary reports useful for compliance officers rather than actuaries:
 
 ```python
-from insurance_demand.compliance import ENBPChecker
+from insurance_optimise.demand.compliance import ENBPChecker
 
-# Convert the renewal data to the format insurance-demand expects
+# Convert the renewal data to the format insurance_optimise.demand expects
 # (it uses 'renewal_price' and 'nb_equivalent_price' column names)
 df_renewals_for_checker = df_renewals.rename({
     "enbp": "nb_equivalent_price",
@@ -77,7 +77,7 @@ try:
     print(f"By channel: {compliance_report.by_channel}")
 except (KeyError, ValueError) as e:
     # Column name mismatch -- the schema requirements for ENBPChecker are strict.
-    # This section may produce a schema error depending on the version of insurance-demand;
+    # This section may produce a schema error depending on the version of insurance-optimise;
     # if so, adjust column names as shown below. Do not rely on silent failure here --
     # a compliance tool that fails quietly is worse than one that fails loudly.
     print(f"Schema error (adjust column names): {e}")

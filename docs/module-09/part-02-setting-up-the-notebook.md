@@ -11,7 +11,7 @@ The notebook opens with one empty cell. At the top, confirm the cluster is attac
 In the first cell, type the following and press **Shift+Enter** to run it:
 
 ```python
-%pip install insurance-demand insurance-elasticity catboost econml polars --quiet
+%pip install insurance-optimise insurance-causal catboost econml polars --quiet
 dbutils.library.restartPython()
 ```
 
@@ -29,17 +29,17 @@ In a new cell, paste and run:
 import numpy as np
 import polars as pl
 
-from insurance_demand import ConversionModel, RetentionModel, ElasticityEstimator
-from insurance_demand import DemandCurve, OptimalPrice
-from insurance_demand.datasets import generate_conversion_data, generate_retention_data
-from insurance_demand.compliance import ENBPChecker
+from insurance_optimise.demand import ConversionModel, RetentionModel, ElasticityEstimator
+from insurance_optimise.demand import DemandCurve, OptimalPrice
+from insurance_optimise.demand.datasets import generate_conversion_data, generate_retention_data
+from insurance_optimise.demand.compliance import ENBPChecker
 
-from insurance_elasticity.data import make_renewal_data
-from insurance_elasticity.fit import RenewalElasticityEstimator
-from insurance_elasticity.diagnostics import ElasticityDiagnostics
-from insurance_elasticity.surface import ElasticitySurface
-from insurance_elasticity.optimise import RenewalPricingOptimiser
-from insurance_elasticity.demand import demand_curve, plot_demand_curve
+from insurance_causal.elasticity.data import make_renewal_data
+from insurance_causal.elasticity.fit import RenewalElasticityEstimator
+from insurance_causal.elasticity.diagnostics import ElasticityDiagnostics
+from insurance_causal.elasticity.surface import ElasticitySurface
+from insurance_causal.elasticity.optimise import RenewalPricingOptimiser
+from insurance_causal.elasticity.demand import demand_curve, plot_demand_curve
 
 print(f"NumPy:   {np.__version__}")
 print(f"Polars:  {pl.__version__}")
