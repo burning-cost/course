@@ -819,7 +819,7 @@ verify.show()
 # MAGIC - The model needs to update daily (MCMC is too slow; use Bühlmann-Straub)
 # MAGIC
 # MAGIC **Next step:** Replace the synthetic grid with real UK postcode sector boundaries
-# MAGIC using `insurance_spatial.from_geojson()`. Part 15 of the tutorial covers this,
+# MAGIC using `from_geojson()` (import via `from insurance_spatial.adjacency import from_geojson`). Part 15 of the tutorial covers this,
 # MAGIC including island handling and the 11,200-sector computational considerations.
 
 # COMMAND ----------
