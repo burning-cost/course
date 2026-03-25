@@ -1,6 +1,6 @@
-## Part 5: Stage 1 -- Configuration
+## Part 5: Stage 1 — Configuration
 
-All configurable values live in one cell. This is the first rule of pipeline design. If a value appears in more than one place, it will eventually be inconsistent.
+All configurable values live in one cell. If a value appears in more than one place, it will eventually be inconsistent. This is not a style preference — it is the discipline that prevents the configuration drift that makes pipelines unreproducible.
 
 Add a markdown cell:
 
@@ -18,22 +18,14 @@ from datetime import date
 # -----------------------------------------------------------------------
 # Unity Catalog coordinates
 # -----------------------------------------------------------------------
-# CATALOG: the top-level container. In Databricks Free Edition, you may
-# only have access to a catalog called "main" or "hive_metastore".
-# Change this to match your Databricks environment.
-CATALOG = "main"
+CATALOG = "main"          # change to "hive_metastore" on Databricks Free Edition
+SCHEMA  = "motor_q2_2026" # name by review cycle, not model version
 
-# SCHEMA: the database within the catalog. Name it by review cycle, not
-# version number. "motor_q2_2026" tells you exactly when and what.
-# "motor_v3" tells you nothing about when it was run.
-SCHEMA  = "motor_q2_2026"
-
-# TABLES: all table names in one dictionary. Change a name here; it
-# changes everywhere. Never hard-code a table name twice.
 TABLES = {
     "raw":                 f"{CATALOG}.{SCHEMA}.raw_policies",
     "features":            f"{CATALOG}.{SCHEMA}.features",
     "freq_predictions":    f"{CATALOG}.{SCHEMA}.freq_predictions",
+    "freq_relativities":   f"{CATALOG}.{SCHEMA}.freq_relativities",
     "conformal_intervals": f"{CATALOG}.{SCHEMA}.conformal_intervals",
     "rate_change":         f"{CATALOG}.{SCHEMA}.rate_action_factors",
     "efficient_frontier":  f"{CATALOG}.{SCHEMA}.efficient_frontier",
@@ -41,12 +33,15 @@ TABLES = {
 }
 
 # -----------------------------------------------------------------------
-# Model and pipeline parameters
+# Pipeline parameters
 # -----------------------------------------------------------------------
-LR_TARGET       = 0.72    # Loss ratio target for rate optimisation
-VOLUME_FLOOR    = 0.97    # Minimum portfolio volume retention
-CONFORMAL_ALPHA = 0.10    # 1 - alpha = 90% coverage intervals
-N_OPTUNA_TRIALS = 20      # Increase to 40 for production runs
+N_POLICIES      = 200_000
+N_OPTUNA_TRIALS = 20      # increase to 40 for production runs
+LR_TARGET       = 0.72    # loss ratio target
+VOLUME_FLOOR    = 0.97    # minimum retention fraction
+FACTOR_LOWER    = 0.90    # lower bound on each factor adjustment
+FACTOR_UPPER    = 1.15    # upper bound on each factor adjustment
+CONFORMAL_ALPHA = 0.10    # 1 - 0.10 = 90% prediction intervals
 
 # -----------------------------------------------------------------------
 # Run identification
@@ -55,7 +50,8 @@ RUN_DATE = str(date.today())
 
 print(f"Run date:           {RUN_DATE}")
 print(f"Catalog / schema:   {CATALOG}.{SCHEMA}")
-print(f"Loss ratio target:  {LR_TARGET:.0%}")
+print(f"LR target:          {LR_TARGET:.0%}")
+print(f"Volume floor:       {VOLUME_FLOOR:.0%}")
 print(f"Conformal alpha:    {CONFORMAL_ALPHA}")
 print(f"Optuna trials:      {N_OPTUNA_TRIALS}")
 print("\nTable names:")
@@ -63,29 +59,33 @@ for k, v in TABLES.items():
     print(f"  {k:<25} {v}")
 ```
 
-**What you should see:** A clean print of all configuration values. If any table name looks wrong, fix it here before running any subsequent stage.
-
-### A note on Unity Catalog
-
-Unity Catalog is Databricks' governance layer for data assets. It uses a three-part naming convention: `catalog.schema.table`. The catalog is the top-level container -- in an enterprise environment it might be called `pricing` or `insurance`. The schema is a logical grouping within the catalog -- we name it by review cycle. The table is the individual data asset.
-
-In Databricks Free Edition, you may only have access to a legacy metastore called `hive_metastore`. In that case, your table names are two-part: `schema.table`. Change `CATALOG = "main"` to `CATALOG = "hive_metastore"` and adjust the TABLES dictionary accordingly. The rest of the pipeline runs identically either way.
-
-The reason we use Unity Catalog for pricing is audit. Unity Catalog logs every read and write to every table. Combined with Delta's version history, you can reconstruct what data was read by any pipeline run on any date in the past. For Consumer Duty compliance, this is not optional -- you need to be able to demonstrate, three years later, what data informed a specific pricing decision.
-
 ### Create the schema
 
-The schema must exist before you can write to it. Run this in a new cell:
-
 ```python
-# Note: CREATE CATALOG requires a paid Databricks workspace.
-# On Databricks Free Edition, the catalog is already created for you.
-# If you are using the Free Edition, comment out the CREATE CATALOG line
-# and set CATALOG = "hive_metastore" in the configuration cell above.
 if CATALOG != "hive_metastore":
     spark.sql(f"CREATE CATALOG IF NOT EXISTS {CATALOG}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
+
+mlflow.set_experiment(
+    f"/Users/{spark.sql('SELECT current_user()').collect()[0][0]}/motor-pipeline-m08"
+)
+
 print(f"Schema {CATALOG}.{SCHEMA} ready.")
 ```
 
-If you are using Databricks Free Edition, set `CATALOG = "hive_metastore"` in the configuration cell above. The legacy metastore does not support `CREATE CATALOG` -- it already exists and is always available.
+### Why the table dictionary matters
+
+Any notebook that names a table twice will eventually have those two names disagree. A table dictionary eliminates that failure mode: every stage reads its table name from `TABLES["key"]`, never from a string literal.
+
+The pattern also makes refactoring safe. If you rename the features table from `features` to `engineered_features`, you change one value in the dictionary. Every downstream stage that reads `TABLES["features"]` picks up the new name automatically. If you had used string literals, you would need to search and replace across the entire notebook — and you would miss at least one.
+
+### Setting the MLflow experiment
+
+`mlflow.set_experiment()` creates a named experiment folder under your Databricks user path if it does not already exist. All MLflow runs in this pipeline will appear under that experiment. The experiment name should match your review cycle so you can find it months later:
+
+```
+/Users/your.email/motor-pipeline-m08
+/Users/your.email/motor-pipeline-q3-2026
+```
+
+If you run this notebook multiple times in the same session, subsequent runs will add new entries to the same experiment. Each run has a unique `run_id` that the audit record captures.

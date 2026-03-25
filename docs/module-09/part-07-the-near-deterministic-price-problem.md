@@ -1,88 +1,77 @@
-## Part 7: The near-deterministic price problem
+## Part 7: Fitting the DML elasticity estimator
 
-Before fitting any elasticity model, we need to check whether the data is good enough to support the estimation. This is not a formality. On many insurance datasets, the price is so tightly determined by risk factors that there is almost no residual variation left for DML to exploit. The check is mandatory.
+The diagnostic is clear. Now fit the estimator.
 
-### What the problem looks like
+`RenewalElasticityEstimator` wraps EconML's `CausalForestDML` with CatBoost nuisance models and insurance-specific defaults. It handles the 5-fold cross-fitting, the log-log treatment specification, and the interface between Polars DataFrames and the underlying numpy arrays.
 
-The DML estimator works by residualising the treatment (log price change) on the confounders, then using the residuals for identification. If the price change is almost entirely predictable from the risk features, the residuals have near-zero variance. The DML estimator becomes like an IV estimator with a weak instrument: the point estimates are noisy, the confidence intervals blow up, and the result is effectively unusable.
+### Why CausalForestDML rather than LinearDML
 
-In insurance this happens naturally. The re-rating system sets the offer price as a nearly deterministic function of the technical premium, and the technical premium is itself a function of the observable risk features. If your renewals all went through the same system with the same uplift applied uniformly, the variation in price change across customers is almost entirely explained by risk features. There is no exogenous component left for identification.
+`LinearDML` (the PLR estimator from Chernozhukov et al. 2018) assumes a constant treatment effect across customers. It gives a single average semi-elasticity and is faster. `CausalForestDML` estimates heterogeneous treatment effects — a per-customer CATE — which is what you need for segment-level pricing decisions.
 
-The diagnostic measures this directly: it computes Var(D_tilde) / Var(D), the fraction of treatment variation that survives after conditioning on observables. If this is below 10%, the DML results cannot be trusted.
+The ATE from `CausalForestDML` is the average of the per-customer CATEs. For portfolio-level price decisions the two estimators give similar ATEs. For building the elasticity surface (Part 9) and per-policy optimisation (Part 12), you need the CausalForestDML output.
 
-### Running the diagnostic
+### Fitting the estimator
 
 ```python
 %md
-## Part 7: Treatment variation diagnostic
+## Part 7: DML elasticity estimation
 ```
 
 ```python
 confounders = ["age", "ncd_years", "vehicle_group", "region", "channel"]
 
-diag = ElasticityDiagnostics()
-report = diag.treatment_variation_report(
-    df_renewals,
-    treatment="log_price_change",
-    confounders=confounders,
+est = RenewalElasticityEstimator(
+    cate_model="causal_forest",
+    n_estimators=200,
+    catboost_iterations=500,
+    n_folds=5,
+    binary_outcome=True,
+    random_state=42,
 )
-print(report.summary())
-```
 
-On the synthetic dataset (which was generated with `price_variation_sd=0.08`), you should see a variation fraction well above the 10% threshold and `weak_treatment=False`. The output looks like:
+print("Fitting CausalForestDML with CatBoost nuisance models...")
+print("(5–8 minutes on Databricks Free Edition)")
 
-```sql
-Treatment Variation Diagnostic
-========================================
-N observations:          50,000
-Var(D):                  0.006823
-Var(D̃):                 0.003801
-Var(D̃)/Var(D):          0.5570  (OK)
-Treatment nuisance R²:   0.4430  (OK)
-
-Treatment variation is sufficient for DML identification.
-```
-
-A Var(D_tilde)/Var(D) of 0.557 means 55.7% of the price change variation is not explained by observable confounders. That is healthy. On real data, especially from insurers that have not run any A/B pricing experiments, this fraction can be 0.05 or lower.
-
-Now simulate what a near-deterministic price dataset looks like:
-
-```python
-# Generate data with near-zero exogenous price variation
-df_ndp = make_renewal_data(n=50_000, seed=42, near_deterministic=True)
-
-report_ndp = diag.treatment_variation_report(
-    df_ndp,
-    treatment="log_price_change",
-    confounders=confounders,
-)
-print(report_ndp.summary())
-```
-
-You will see `weak_treatment=True` with Var(D_tilde)/Var(D) below 0.10. The report will print the standard remedies:
-
-1. Run randomised A/B price tests (gold standard)
-2. Use panel data with within-customer variation over multiple renewals
-3. Exploit bulk re-rating quasi-experiments where a uniform uplift was applied to the line
-4. Use rate change timing heterogeneity (customers with different anniversary dates)
-5. Exploit the PS21/5 regression discontinuity for customers who were near the ENBP boundary -- **this approach requires that proximity to the ENBP boundary is unrelated to renewal probability conditional on covariates, an assumption that is unlikely to hold in practice. The ENBP threshold is a function of the customer's own risk characteristics, so customers near the boundary are not a random subset. Use only if you can argue this condition holds for your book.**
-
-If your real data fails this check, do not proceed to the DML fitting. The point estimates will be meaningless. Take the report to the pricing director and use it to make the case for an A/B pricing experiment or a formal quasi-experimental design.
-
-### The calibration summary check
-
-As a secondary sanity check, look at the raw renewal rate by decile of price change:
-
-```python
-cal_summary = diag.calibration_summary(
-    df_renewals,
+est.fit(
+    df,
     outcome="renewed",
     treatment="log_price_change",
-    n_bins=10,
+    confounders=confounders,
 )
-print(cal_summary)
+print("Done.")
 ```
 
-In a well-identified dataset, the renewal rate should fall monotonically as the price change increases. If you see no monotone relationship - or a positive relationship (higher price change associated with higher renewal) - there is severe confounding that the diagnostic may have missed.
+The fit runs 5-fold cross-fitting for both the outcome nuisance model (CatBoostClassifier predicting renewal) and the treatment nuisance model (CatBoostRegressor predicting log price change). The CausalForestDML then uses the residuals from both models to estimate per-customer CATEs.
 
-On the synthetic data you should see a clean downward pattern: decile 1 (smallest price increases) has the highest renewal rate, decile 10 (largest price increases) has the lowest. This is the signal that DML will exploit.
+`n_estimators=200` must be divisible by `n_folds × 2 = 10` — the library will round up automatically if not. For a more accurate elasticity surface, increase to 400; for faster iteration during development, reduce to 100.
+
+### The average treatment effect
+
+```python
+ate, lb, ub = est.ate()
+true_ate = float(df["true_elasticity"].mean())
+
+print(f"True ATE (DGP):       {true_ate:.3f}")
+print(f"DML estimate:         {ate:.3f}")
+print(f"95% CI:               [{lb:.3f}, {ub:.3f}]")
+print(f"Naive logistic:       {naive_coef:.3f}")
+print()
+print(f"DML bias:             {abs(ate - true_ate):.3f}")
+print(f"Naive bias:           {abs(naive_coef - true_ate):.3f}")
+```
+
+The DML estimate should be within the 95% CI of the true ATE (approximately −2.0). The naive logistic will typically be 20–40% more negative — the confounding bias demonstrated in Part 5. On 50,000 observations the DML 95% CI should be narrow enough to be commercially meaningful: on the order of ±0.15.
+
+### Interpreting the semi-elasticity
+
+The coefficient is the semi-elasticity on the linear probability scale. The treatment is log(offer_price / last_premium). The outcome is binary renewal.
+
+An ATE of −2.0 means: a 1-unit increase in log price change reduces renewal probability by 2.0 percentage points. For practical price changes:
+
+| Log price change | Price change | Renewal prob change |
+|-----------------|--------------|---------------------|
+| 0.0953 | +10% | −2.0 × 0.0953 = −0.19 pp |
+| 0.0488 | +5%  | −2.0 × 0.0488 = −0.10 pp |
+| −0.0513 | −5% | −2.0 × −0.0513 = +0.10 pp |
+
+At a base renewal rate of 83%, a 10% price increase is expected to reduce renewal probability by around 0.19 percentage points at the portfolio average. That is the number that feeds the rate optimiser from Module 7. With the naive estimate (say −2.7), the optimiser would have predicted a 0.26 pp drop — overstating the demand response by 37%.

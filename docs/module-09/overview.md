@@ -1,12 +1,21 @@
-# Module 9: Demand Modelling and Price Elasticity
+# Module 9: Demand Elasticity
 
-In Module 7 you built a constrained rate optimiser that could find the profit-maximising factor adjustments while satisfying your LR target, volume floor, and ENBP ceiling. It worked. But it required a demand model as an input - and you were given one: a logistic curve with a manually specified price coefficient. Where did that coefficient come from?
+Module 7 gave you a rate optimiser. It needed a demand model as an input — a number telling it how renewal probability responds to price changes. The number came from somewhere. In most UK pricing teams, that somewhere is a consultant benchmark, a judgment call, or a naive logistic regression. All three are worse than they look.
 
-The honest answer in most UK pricing teams is: judgment, benchmarks from consultants, or a naive regression on observed lapse data. All three are worse than they look. The judgment is unauditable. The benchmarks are from other books, other market conditions, and other years. The naive regression is biased in a way that we will demonstrate precisely.
+This module teaches you to estimate the price coefficient properly. The method is Double Machine Learning (Chernozhukov et al., 2018), a causal inference technique that accounts for the confounding structure of insurance pricing data. The naive regression is systematically biased in a predictable direction. DML corrects it.
 
-This module shows how to estimate the price coefficient properly, using causal inference methods that account for the confounding structure of insurance pricing data. By the end you will be able to take a quote or renewal dataset, estimate a causal price elasticity, audit the result for the near-deterministic price problem, build a demand curve, and run an FCA-compliant renewal pricing optimisation - all in Python, all reproducible, all auditable.
+By the end you will have:
 
-We use two libraries throughout: `insurance_optimise.demand` (part of `insurance-optimise`) for conversion and retention modelling, and `insurance_causal.elasticity` (part of `insurance-causal`) for the full causal estimation pipeline on renewal data. They have overlapping concerns and you may end up using both in production. We explain where each one fits.
+- Understood exactly why the naive regression is biased, and by how much
+- Run the pre-flight diagnostic that tells you whether your data has enough price variation to identify elasticity
+- Fitted a causal elasticity estimator on UK motor renewal data using `RenewalElasticityEstimator`
+- Estimated heterogeneous elasticity — the per-customer price sensitivity — using CausalForestDML
+- Built an elasticity surface showing how price sensitivity varies by NCD band, age, and channel
+- Run a per-policy profit-maximising optimisation subject to the PS21/5 ENBP constraint
+- Produced a compliance audit trail suitable for an FCA section 166 review
+
+The core library is `insurance_causal.elasticity`. We also use `insurance_causal.elasticity.diagnostics` for the pre-flight check, `insurance_causal.elasticity.surface` for the segment summary, and `insurance_causal.elasticity.optimise` for the per-policy optimisation.
+
 [Download the notebook for this module](notebook.py)
 
 ---

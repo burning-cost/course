@@ -1,171 +1,188 @@
-## Part 13: Stage 9 -- Rate optimisation
+## Part 13: Stage 9 — Rate optimisation
 
-The rate optimiser from Module 7 takes a renewal portfolio and finds the factor adjustments that minimise loss ratio subject to volume and ENBP constraints. In a well-connected pipeline, the inputs to the rate optimiser come from the upstream stages: the frequency model's pure premium predictions define the technical premium, and the SHAP relativities define the factor structure.
+The rate optimiser receives the pure premium from Stage 6 and finds the factor adjustments that minimise loss ratio subject to volume, ENBP, and factor-bounds constraints. This is Module 7's optimiser connected to the pipeline's own model outputs — not a standalone exercise with synthetic inputs.
 
 Add a markdown cell:
 
 ```python
 %md
-## Stage 9: Rate optimisation -- connected to Stage 6 and Stage 7
+## Stage 9: Rate optimisation
 ```
 
-### Building the renewal portfolio from model predictions
-
-The renewal portfolio is the set of policies coming up for renewal in the next rating period. In production, this comes from the policy administration system. Here, we use the test set predictions as a proxy -- the test year represents the most recent pricing period, and its policies are the renewal candidates.
+### Building the renewal portfolio
 
 ```python
-from rate_optimiser import (
-    PolicyData, FactorStructure, RateChangeOptimiser,
-    LossRatioConstraint, VolumeConstraint, ENBPConstraint,
-    FactorBoundsConstraint,
-)
-from rate_optimiser.demand import make_logistic_demand, LogisticDemandParams
+from insurance_optimise import PortfolioOptimiser, ConstraintConfig, EfficientFrontier
 from scipy.special import expit
-import pandas as pd
 
-# -----------------------------------------------------------------------
-# Build renewal portfolio.
-#
-# The connection to Stage 6:
-#   - pure_premium comes from freq_model.predict * sev_model.predict
-#     (not from a separate synthetic generation step)
-#   - This ensures the rate optimiser is working from the same technical
-#     premium numbers that informed the pricing review
-#
-# The connection to Stage 7:
-#   - Factor structure uses the SHAP relativities directly
-#   - Region SHAP relativities from Stage 7 define f_region
-#   - NCB deficit SHAP relativities define f_ncb
-#   - These are not synthetic proxies -- they are the model's own output
-# -----------------------------------------------------------------------
+# Use test-year policies as the renewal portfolio proxy.
+# In production, the renewal portfolio comes from the policy administration system.
+# The connection to Stage 6: pure_premium here is the actual model output —
+# frequency * severity from the trained GBM — not a separately generated proxy.
 
-n_renewal = min(5_000, len(df_test))   # cap for computation speed
+n_renewal = min(5_000, len(df_test))
+rng_opt   = np.random.default_rng(seed=9999)
+ren_idx   = rng_opt.choice(len(df_test), n_renewal, replace=False)
+df_ren    = df_test.iloc[ren_idx].copy()
+pp_ren    = pure_premium[ren_idx]
 
-rng_opt = np.random.default_rng(seed=9999)
-
-# Select the renewal subset
-ren_idx  = rng_opt.choice(len(df_test), n_renewal, replace=False)
-df_ren   = df_test.iloc[ren_idx].copy()
-pp_ren   = pure_premium[ren_idx]
-
-# Technical premium: pure premium (frequency * severity)
+# Technical premium: pure premium from freq * sev models
 tech_prem = pp_ren
 
-# Current premium: assume book running at 75% LR
-# In production, current_premium comes from the policy administration system
+# Current premium: assume book running at LR_TARGET (break-even starting position)
+# In production, current_premium comes from the policy administration system.
 curr_prem = tech_prem / LR_TARGET
 
-# Market premium: assume market is 2pp below current LR
+# Market (new-business equivalent) premium: assume market is 2pp softer than current LR
 mkt_prem  = tech_prem / (LR_TARGET - 0.02)
-
-# Renewal probability: logistic model on price relativity
-# P(renew) = sigmoid(intercept + price_coef * log(curr/mkt))
-renewal_prob = expit(1.0 + (-2.0) * np.log(curr_prem / mkt_prem))
-
-# -----------------------------------------------------------------------
-# Factor structure -- derived from SHAP relativities
-#
-# For region: use the SHAP relativities computed in Stage 7.
-# For NCB: map ncb_deficit to its SHAP relativity quintile.
-#
-# In a production pipeline, this mapping is automatic from the SHAP output.
-# Here we implement it manually for clarity.
-# -----------------------------------------------------------------------
-
-# Region factor: from SHAP relativities (Stage 7)
-region_shap = shap_relativities.get("region", {})
-if region_shap:
-    # Map each policy's region to its SHAP-derived relativity
-    f_region = np.array([
-        region_shap.get(str(r), 1.0)
-        for r in df_ren["region"].values
-    ])
-else:
-    # Fallback if SHAP relativities not available
-    region_rel = {"North": 0.82, "Midlands": 0.90, "SouthEast": 1.08,
-                  "London": 1.38, "SouthWest": 0.86}
-    f_region = np.array([region_rel.get(str(r), 1.0) for r in df_ren["region"].values])
-
-# NCB factor: FEATURE_COLS does not include ncb_deficit in this pipeline,
-# so we default to a flat factor of 1.0. In a production model that includes
-# ncb_deficit, you would map SHAP relativities from Stage 7 here.
-f_ncb = np.ones(n_renewal)
-
-# Age factor: from age_mid (continuous -- use quintile)
-age_vals = df_ren["age_mid"].values if "age_mid" in df_ren.columns else np.full(n_renewal, 43.0)
-age_relative = (age_vals - age_vals.mean()) / (age_vals.std() + 1e-6)
-f_age = np.exp(0.20 * age_relative)   # approximate monotone age effect
 
 print(f"Renewal portfolio: {n_renewal:,} policies")
 print(f"Mean technical premium: £{tech_prem.mean():,.2f}")
 print(f"Mean current premium:   £{curr_prem.mean():,.2f}")
-print(f"Mean renewal probability: {renewal_prob.mean():.3f}")
+print(f"Mean market premium:    £{mkt_prem.mean():,.2f}")
+print(f"Starting LR:            {(tech_prem / curr_prem).mean():.3f}")
+```
+
+### Demand model
+
+The elasticity determines how sensitive renewal probability is to price changes. A price coefficient of -2.0 means a 10% price increase reduces renewal probability by approximately `1 - sigmoid(1 + (-2) * log(1.10)) ≈ 17%` at the portfolio mean. This is consistent with PCW-driven UK motor markets.
+
+```python
+# Logistic renewal probability:
+# P(renew) = sigmoid(intercept + price_coef * log(curr / mkt))
+# price_coef = -2.0: moderate price sensitivity
+# intercept = 1.2: baseline renewal probability ~77% at equal prices
+
+intercept  = 1.2
+price_coef = -2.0
+tenure_coef = 0.04   # longer-tenure customers are less price-sensitive
+
+tenure = rng_opt.integers(0, 10, n_renewal).astype(float)
+
+log_price_ratio = np.log(np.clip(curr_prem / mkt_prem, 1e-6, None))
+p_renew = expit(intercept + price_coef * log_price_ratio + tenure_coef * tenure)
+
+# Demand elasticity: d(log P(renew)) / d(log price)
+# For the logistic model at mean: approximately price_coef * P * (1 - P)
+# We pass a fixed elasticity per policy for the optimiser's gradient computation
+elasticity = np.full(n_renewal, price_coef * p_renew.mean() * (1 - p_renew.mean()))
+
+channels = rng_opt.choice(["PCW", "direct"], n_renewal, p=[0.68, 0.32])
+renewal_flag = np.ones(n_renewal, dtype=bool)   # all policies are renewals
+
+# ENBP: the new-business equivalent price.
+# For ENBP compliance under PS21/11, the renewal price must not exceed
+# the equivalent new-business price for equivalent risk. We use mkt_prem
+# as the ENBP benchmark — in production this comes from the NB pricing model.
+enbp = mkt_prem * 1.01   # 1% uplift above market: a conservative ENBP ceiling
+
+print(f"\nDemand model:")
+print(f"  Mean renewal probability: {p_renew.mean():.3f}")
+print(f"  Mean elasticity:          {elasticity.mean():.3f}")
+print(f"  Channel split:            PCW={sum(channels=='PCW'):,}, "
+      f"direct={sum(channels=='direct'):,}")
 ```
 
 ### Running the optimiser
 
 ```python
-channels = rng_opt.choice(["PCW", "direct"], n_renewal, p=[0.68, 0.32])
-
-renewal_port = pd.DataFrame({
-    "policy_id":         df_ren["policy_id"].values,
-    "channel":           channels,
-    "renewal_flag":      np.ones(n_renewal, dtype=bool),
-    "technical_premium": tech_prem,
-    "current_premium":   curr_prem,
-    "market_premium":    mkt_prem,
-    "renewal_prob":      renewal_prob,
-    "tenure":            rng_opt.integers(0, 10, n_renewal).astype(float),
-    "f_region":          f_region,
-    "f_ncb":             f_ncb,
-    "f_age":             f_age,
-    "f_iat":             np.ones(n_renewal),   # introduced factor (no change)
-})
-
-data = PolicyData(renewal_port)
-fs   = FactorStructure(
-    factor_names=["f_region", "f_ncb", "f_age", "f_iat"],
-    factor_values=renewal_port[["f_region", "f_ncb", "f_age", "f_iat"]],
-    renewal_factor_names=["f_iat"],   # only f_iat is renewal-only
+config = ConstraintConfig(
+    lr_max=LR_TARGET,            # loss ratio must not exceed 72%
+    retention_min=VOLUME_FLOOR,  # retain at least 97% of policies by volume
+    max_rate_change=FACTOR_UPPER - 1.0,   # maximum increase per factor: 15%
 )
 
-demand = make_logistic_demand(
-    LogisticDemandParams(intercept=1.0, price_coef=-2.0, tenure_coef=0.04)
+opt = PortfolioOptimiser(
+    technical_price=tech_prem,
+    expected_loss_cost=tech_prem,   # for this example: cost = tech premium
+    p_demand=p_renew,
+    elasticity=elasticity,
+    renewal_flag=renewal_flag,
+    enbp=enbp,
+    constraints=config,
 )
-opt = RateChangeOptimiser(data=data, demand=demand, factor_structure=fs)
 
-# Constraints from Module 7
-opt.add_constraint(LossRatioConstraint(bound=LR_TARGET))
-opt.add_constraint(VolumeConstraint(bound=VOLUME_FLOOR))
-opt.add_constraint(ENBPConstraint(channels=["PCW", "direct"]))
-opt.add_constraint(FactorBoundsConstraint(lower=0.90, upper=1.15,
-                                          n_factors=fs.n_factors))
+result = opt.optimise()
 
-result = opt.solve()
-print(result.summary())
+print(f"\nOptimisation result:")
+print(f"  Converged:              {result.converged}")
+print(f"  Expected LR:            {result.expected_loss_ratio:.4f}  "
+      f"(target: {LR_TARGET:.4f})")
+print(f"  Expected volume:        {result.expected_volume_ratio:.4f}  "
+      f"(floor: {VOLUME_FLOOR:.4f})")
+print(f"  Expected profit:        £{result.expected_profit:,.0f}")
+print(f"  ENBP violations:        {result.enbp_violations}")
 ```
 
-### Writing rate action factors to Delta
+**What `result.converged` means.** The SLSQP solver converges when the gradient of the objective function is below a tolerance threshold (default: 1e-9) and all constraints are satisfied within tolerance. If the optimiser does not converge, the result is the best feasible point found — it may satisfy constraints but is not guaranteed to be optimal. Always check `converged` before presenting results.
+
+If the optimiser does not converge with the default settings, try:
+1. Relaxing the LR target by 0.5pp — the feasible region may be very small
+2. Checking whether the volume and LR constraints are simultaneously feasible (run `opt.check_feasibility()` first)
+3. Increasing `n_restarts=3` in the PortfolioOptimiser constructor
+
+### Efficient frontier
 
 ```python
-rate_factors_df = pl.DataFrame({
-    "run_date":      [RUN_DATE] * 4,
-    "factor":        ["f_region", "f_ncb", "f_age", "f_iat"],
-    "adjustment":    [float(result.factor_adjustments.get(f, 1.0)) for f in ["f_region", "f_ncb", "f_age", "f_iat"]],
-    "lr_target":     [LR_TARGET] * 4,
-    "optimiser_converged": [result.converged] * 4,
-    "expected_lr":   [round(result.expected_loss_ratio, 4)] * 4,
-    "expected_vol":  [round(result.expected_volume_ratio, 4)] * 4,
+# Trace the efficient frontier: solve the optimiser at a range of LR targets
+frontier = EfficientFrontier(
+    optimiser=opt,
+    sweep_param="lr_max",
+)
+frontier_df = frontier.trace(
+    lr_range=(0.68, 0.78),
+    n_points=12,
+)
+
+print("\nEfficient frontier:")
+print(frontier_df.to_string() if hasattr(frontier_df, "to_string") else frontier_df)
+
+# Write to Delta
+(
+    spark.createDataFrame(frontier_df.to_pandas() if hasattr(frontier_df, "to_pandas") else frontier_df)
+    .write.format("delta")
+    .mode("overwrite")
+    .option("overwriteSchema", "true")
+    .saveAsTable(TABLES["efficient_frontier"])
+)
+print(f"Efficient frontier written to {TABLES['efficient_frontier']}")
+```
+
+### Writing the rate action factors to Delta
+
+```python
+# The optimiser returns a multiplier per policy.
+# For reporting, summarise: mean multiplier by policy segment or factor level.
+# Here we report the portfolio-level summary statistics.
+
+rate_summary = pl.DataFrame({
+    "run_date":            [RUN_DATE],
+    "lr_target":           [LR_TARGET],
+    "volume_floor":        [VOLUME_FLOOR],
+    "optimiser_converged": [bool(result.converged)],
+    "expected_lr":         [round(float(result.expected_loss_ratio), 4)],
+    "expected_volume":     [round(float(result.expected_volume_ratio), 4)],
+    "expected_profit":     [round(float(result.expected_profit), 2)],
+    "n_enbp_violations":   [int(result.enbp_violations)],
+    "n_renewal_policies":  [n_renewal],
+    "freq_run_id":         [freq_run_id],
+    "sev_run_id":          [sev_run_id],
 })
 
-spark.createDataFrame(rate_factors_df.to_pandas()) \
-    .write.format("delta") \
-    .mode("overwrite") \
-    .option("overwriteSchema", "true") \
+(
+    spark.createDataFrame(rate_summary.to_pandas())
+    .write.format("delta")
+    .mode("overwrite")
+    .option("overwriteSchema", "true")
     .saveAsTable(TABLES["rate_change"])
+)
 
-print(f"Rate action factors written to {TABLES['rate_change']}")
-print(f"Optimiser converged: {result.converged}")
-print(f"Expected LR after action: {result.expected_loss_ratio:.3f}")
-print(f"Expected volume retention: {result.expected_volume_ratio:.3f}")
+spark.sql(f"""
+    ALTER TABLE {TABLES['rate_change']}
+    SET TBLPROPERTIES ('delta.deletedFileRetentionDuration' = 'interval 365 days')
+""")
+
+print(f"Rate action summary written to {TABLES['rate_change']}")
 ```
+
+**Presenting the frontier.** The pricing committee decision point is not the single-optimum result — it is a point on the frontier. The frontier shows the full trade-off between loss ratio and volume retention. A committee that accepts a 0.74 LR target instead of 0.72 gains 1.5pp of additional volume retention. That is a quantified trade-off, not a judgment call made in a spreadsheet. The efficient_frontier table is the input to that conversation.

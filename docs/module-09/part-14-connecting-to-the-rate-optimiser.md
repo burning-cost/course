@@ -1,59 +1,71 @@
-## Part 14: Connecting to the rate optimiser
+## Part 14: Connecting elasticity to the rate optimiser
 
-In Module 7 you used the `rate-optimiser` library, which required a demand callable as one of its inputs. The `ConversionModel` from `insurance_optimise.demand` provides exactly this.
+Module 7's rate optimiser accepts a demand model as an input. The Module 7 notebook used a manually specified logistic curve with a price coefficient taken from judgment or a benchmark. You now have a causally estimated coefficient. This part shows how to connect the two.
 
-This part shows how to connect the demand model to the rate optimiser so that the Module 7 pipeline uses a properly calibrated elasticity rather than a manually specified coefficient.
+### The interface
 
-### Exporting the conversion model as a demand callable
+The rate optimiser expects a callable that takes a price ratio and a feature DataFrame and returns a renewal probability for each row. The fitted `RenewalElasticityEstimator` does not have this exact interface — it estimates CATEs, not levels — but you can wrap it.
+
+The practical connection for Module 7 is simpler: replace the manual `price_coef` in `make_logistic_demand()` with the ATE from the DML model.
 
 ```python
 %md
-## Part 14: Rate optimiser integration
+## Part 14: Connecting to Module 7 rate optimiser
 ```
 
 ```python
-# The conversion model can be exported as a callable compatible with
-# rate-optimiser's DemandModel interface
+# In Module 7 you called:
+# demand_model = make_logistic_demand(intercept=2.0, price_coef=-2.2, tenure_coef=0.04)
 
-demand_fn = conv_catboost.as_demand_callable()
+# Replace with the DML-estimated ATE:
+dml_price_coef = ate  # from est.ate() — causally estimated
+print(f"Replacing manual coefficient (-2.2) with DML estimate ({dml_price_coef:.3f})")
 
-# Test it: takes price_ratio (numpy array) and features (Polars DataFrame)
-# returns conversion probability for each row
-test_features = df_quotes.select(["age", "vehicle_group", "ncd_years",
-                                   "area", "channel", "technical_premium"]).head(100)
-test_price_ratio = np.full(100, 1.1)  # 10% loading above technical
-
-test_probs = demand_fn(test_price_ratio, test_features)
-print(f"Conversion probs at 1.1x tech premium: {test_probs.mean():.4f}")
-
-test_price_ratio_low = np.full(100, 0.95)  # 5% discount
-test_probs_low = demand_fn(test_price_ratio_low, test_features)
-print(f"Conversion probs at 0.95x tech premium: {test_probs_low.mean():.4f}")
-print(f"Effect of 15pp price increase: {(test_probs.mean() - test_probs_low.mean()):.4f}")
-```
-
-The conversion probability at 0.95x technical premium (a 5% discount) is higher than at 1.1x (a 10% loading). This is the demand function: lower price, higher conversion. The callable wraps the full CatBoost model including all the feature effects.
-
-### Using the callable in the rate optimiser
-
-In Module 7, you passed `make_logistic_demand(params)` to the rate optimiser. You can replace this with the callable from the trained conversion model:
-
-```python
-# The rate-optimiser expects a callable with signature:
-# f(price_ratio: np.ndarray, features: pl.DataFrame) -> np.ndarray
-
-# demand_fn from conv_catboost has exactly this signature.
-# In a Module 7 notebook, you would use:
-
-# from rate_optimiser import RateChangeOptimiser
-# opt = RateChangeOptimiser(
-#     policy_data=policy_data,
-#     factor_structure=factor_structure,
-#     demand_model=demand_fn,   # <-- use the trained model here
+# The Module 7 call becomes:
+# demand_model = make_logistic_demand(
+#     intercept=2.0,
+#     price_coef=dml_price_coef,   # <-- DML-estimated
+#     tenure_coef=0.04,
 # )
-
-print("demand_fn signature matches rate-optimiser's DemandModel interface.")
-print("Use conv_catboost.as_demand_callable() in place of make_logistic_demand().")
 ```
 
-The key advantage is that the demand model now reflects your actual observed data rather than a manually specified elasticity. The rate optimiser will find factor adjustments that are consistent with how your customers actually respond to price changes, not with a benchmark from a generic industry study.
+### What changes in the optimiser output
+
+If the DML ATE is less negative than the manual coefficient (e.g., −1.9 instead of −2.2), the optimiser believes the book is less elastic than assumed. The practical effect:
+
+- The efficient frontier shifts: a given LR target is achievable at lower volume loss than the manual model predicted
+- The optimal factor adjustments will be slightly more aggressive (higher rates)
+- The shadow price on the volume constraint decreases — the constraint is worth less because volume responds less to price
+
+If the DML ATE is more negative (e.g., −2.5 instead of −2.2), the optimiser will constrain the rate action more than the manual model did.
+
+Neither direction is "better" — the DML estimate is simply more likely to be correct than the manual guess.
+
+### The heterogeneous extension
+
+For a fully segmented optimisation — different price strategies for NCD-0 PCW versus NCD-5 direct — the per-customer CATEs from `est.cate(df)` feed directly into the `RenewalPricingOptimiser` as shown in Part 12. This is a per-policy approach rather than a factor-table approach, but the two can coexist: use the factor-table optimiser from Module 7 for the initial rate structure, and the per-policy optimiser for retention discounts on elastic customers.
+
+### Storing the elasticity estimate in MLflow
+
+```python
+import mlflow
+
+mlflow.set_experiment("/Users/your.email@company.com/insurance-pricing/elasticity")
+
+with mlflow.start_run(run_name="renewal_elasticity_causal_forest"):
+    mlflow.log_metric("ate", ate)
+    mlflow.log_metric("ate_ci_lower", lb)
+    mlflow.log_metric("ate_ci_upper", ub)
+    mlflow.log_param("n_training_records", len(df))
+    mlflow.log_param("cate_model", "causal_forest")
+    mlflow.log_param("n_estimators", 200)
+    mlflow.log_param("catboost_iterations", 500)
+    mlflow.log_param("confounders", str(confounders))
+    mlflow.log_metric("treatment_variation_fraction", report.variation_fraction)
+    mlflow.log_metric("enbp_breach_count", n_breaches)
+
+    run_id = mlflow.active_run().info.run_id
+    print(f"Logged to MLflow. Run ID: {run_id}")
+```
+
+The run ID links the ATE estimate used in the rate review to the model that produced it. For a section 166 audit, this is the starting point of your methodological audit trail.

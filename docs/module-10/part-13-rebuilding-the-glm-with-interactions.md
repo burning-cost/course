@@ -26,28 +26,29 @@ print(comparison)
 
 **Expected output:**
 
-```python
+```
 shape: (2, 8)
-┌───────────────────────────┬─────────────┬──────────┬─────────────┬─────────────┬─────────────────┬───────────────────┬──────────────┐
-│ model                     ┆ deviance    ┆ n_params ┆ aic         ┆ bic         ┆ delta_deviance  ┆ delta_deviance_pct┆ n_new_params │
-│ ---                       ┆ ---         ┆ ---      ┆ ---         ┆ ---         ┆ ---             ┆ ---               ┆ ---          │
-│ str                       ┆ f64         ┆ i64      ┆ f64         ┆ f64         ┆ f64             ┆ f64               ┆ i64          │
-╞═══════════════════════════╪═════════════╪══════════╪═════════════╪═════════════╪═════════════════╪═══════════════════╪══════════════╡
-│ base_glm                  ┆ 98432.x     ┆ 19       ┆ 98470.x     ┆ 98627.x     ┆ 0.0             ┆ 0.0               ┆ 0            │
-│ glm_with_interactions     ┆ 96850.x     ┆ 43       ┆ 96936.x     ┆ 97135.x     ┆ 1582.x          ┆ 1.61              ┆ 24           │
-└───────────────────────────┴─────────────┴──────────┴─────────────┴─────────────┴─────────────────┴───────────────────┴──────────────┘
+┌───────────────────────────┬─────────────┬──────────┬──────────────┬──────────────┬─────────────────┬───────────────────┬──────────────┐
+│ model                     ┆ deviance    ┆ n_params ┆ deviance_aic ┆ deviance_bic ┆ delta_deviance  ┆ delta_deviance_pct┆ n_new_params │
+│ ---                       ┆ ---         ┆ ---      ┆ ---          ┆ ---          ┆ ---             ┆ ---               ┆ ---          │
+│ str                       ┆ f64         ┆ i64      ┆ f64          ┆ f64          ┆ f64             ┆ f64               ┆ i64          │
+╞═══════════════════════════╪═════════════╪══════════╪══════════════╪══════════════╪═════════════════╪═══════════════════╪══════════════╡
+│ base_glm                  ┆ 98432.x     ┆ 19       ┆ 98470.x      ┆ 98627.x      ┆ 0.0             ┆ 0.0               ┆ 0            │
+│ glm_with_interactions     ┆ 96850.x     ┆ 43       ┆ 96936.x      ┆ 97135.x      ┆ 1582.x          ┆ 1.61              ┆ 24           │
+└───────────────────────────┴─────────────┴──────────┴──────────────┴──────────────┴─────────────────┴───────────────────┴──────────────┘
 ```
 
 The exact numbers will vary slightly depending on the random seed and CANN training, but you should see:
 - `delta_deviance` of several hundred to a few thousand (capturing the planted interactions)
 - `n_new_params` reflecting the parameter cost of your suggested interactions
-- AIC and BIC both lower for the interaction model (negative delta is better)
+- `deviance_aic` and `deviance_bic` both lower for the interaction model (lower is better)
+
+Note: the comparison table uses `deviance_aic` and `deviance_bic` (deviance-based information criteria: D + 2k and D + k·log(n)), not the standard AIC from R's `AIC()` function. The delta values are equivalent to standard delta-AIC/BIC and are what matter for model comparison.
 
 ### Inspect the interaction GLM coefficients
 
 ```python
 # The enhanced_glm is a fitted glum GeneralizedLinearRegressor
-# We can inspect its coefficients
 print(f"Base GLM parameters:      {len(glm_base.coef_) + 1}")
 print(f"Enhanced GLM parameters:  {len(enhanced_glm.coef_) + 1}")
 print()
@@ -59,9 +60,9 @@ ix_coefs   = [enhanced_glm.coef_[list(coef_names).index(c)] for c in ix_cols]
 
 print("Interaction term coefficients:")
 for name, coef in sorted(zip(ix_cols, ix_coefs), key=lambda x: abs(x[1]), reverse=True):
-    print(f"  {name:<40} {coef:+.4f}  (relativity: {np.exp(coef):.3f})")
+    print(f"  {name:<50} {coef:+.4f}  (relativity: {np.exp(coef):.3f})")
 ```
 
-**What this shows:** The interaction terms are named `_ix_age_band_vehicle_group` (for categorical × categorical, the library creates a combined categorical column). The coefficients tell you the additional log-multiplicative adjustment for each combination of age band and vehicle group levels, on top of the main effects.
+**What this shows:** For a categorical × categorical interaction (e.g., `age_band × vehicle_group`), the library adds separate binary contrast columns for each non-reference level combination. A 6-level age band × 5-level vehicle group band produces 5 × 4 = 20 interaction columns, each named `_ix_age_band_{level}_X_vehicle_group_{level}`. For a categorical × continuous interaction, the columns are named `_ix_{cat_feature}_{level}_{cont_feature}`.
 
-For the planted interaction (age 17-21, vehicle group 41-50), you should see positive interaction coefficients in the region of +0.25 to +0.35, consistent with the planted 0.30 log-unit bump.
+For the planted interaction (age band 17-21, vehicle group 41-50), you should see positive interaction coefficients in the region of +0.25 to +0.35, consistent with the planted 0.30 log-unit bump.

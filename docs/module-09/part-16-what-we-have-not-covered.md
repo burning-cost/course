@@ -1,33 +1,33 @@
 ## Part 16: What we have not covered
 
-Demand modelling is a deep topic. This module has covered the core pipeline that most UK pricing teams need. Several important extensions exist that are worth knowing about, even if we have not implemented them here.
+### The autodml subpackage
 
-### Survival models for CLV
+`insurance_causal` has a separate `autodml` subpackage (`PremiumElasticity`, `DoseResponseCurve`) implementing automatic debiased ML via minimax Riesz regression (Chernozhukov et al. 2022, *Econometrica* 90(3): 967–1027). This avoids the need to explicitly estimate E[D|X] — useful when the treatment distribution is difficult to model.
 
-The `RetentionModel` with `model_type='cox'` or `model_type='weibull'` produces a survival function: the probability of still being a customer at times t=1, 2, 3, 5 years. This is necessary for Customer Lifetime Value calculations. The logistic model only tells you about the next renewal. If you are pricing for CLV (which is increasingly the right commercial framework), you need the survival model.
+For binary outcomes and log price change treatments, the `elasticity` subpackage (which we have used throughout) is the right choice. `autodml` is more appropriate when the treatment is non-standard or when you want to estimate dose-response curves over a continuous treatment range rather than a single semi-elasticity.
 
-The survival model requires a `duration_col` column (years since first policy) and handles mid-term cancellations correctly as censored observations. Fitting it is straightforward:
+### The causal_forest subpackage
 
-```python
-# Example only - not run in this module
-# retention_survival = RetentionModel(
-#     model_type="cox",
-#     duration_col="tenure_years",
-#     feature_cols=["ncd_years", "payment_method", "channel", "claim_last_3yr"],
-# )
-# retention_survival.fit(df_with_duration)
-# survival_curves = retention_survival.predict_survival(df, times=[1, 2, 3, 5])
-```
+The `causal_forest` subpackage provides formal heterogeneous treatment effect inference: BLP tests (does heterogeneity exist?), GATES by quantile group, CLAN (characterisation of the least and most affected subgroups), and RATE/AUTOC targeting evaluation.
+
+We used `RenewalElasticityEstimator` from the `elasticity` subpackage, which wraps the same `CausalForestDML` estimator. The `causal_forest` subpackage provides `HeterogeneousElasticityEstimator` with additional formal testing. If you need a p-value for "does price elasticity vary significantly by NCD band?" rather than just a GATE table, use `HeterogeneousInference.run()`.
 
 ### Instrumental variables
 
-When the near-deterministic price problem is present but you have a valid instrument - an external variable that affects price but is independent of individual renewal probability - you can use the IV variant of DML (PLIV). The `ElasticityEstimator` in `insurance_optimise.demand` supports this via the `instrument_col` parameter.
+When the near-deterministic price problem is present and A/B testing is not available, a valid instrument — a variable that affects price but is independent of renewal probability conditional on risk factors — allows consistent estimation via PLIV (partial linear IV).
 
-Valid instruments in practice include:
-- A bulk rate change indicator (all policies subject to a Q1 2024 10% increase share this exogenous variation)
-- A regulatory change dummy (PS21/5 caused forced price reductions for customers above ENBP)
-- A competitor price shock (if a major competitor withdrew from the market, causing price spikes on comparison sites in certain regions)
+Practical instruments:
 
-### Multi-product demand
+- **Bulk rate change indicator**: all policies subject to a 10% Q1 2024 bulk increase share exogenous price variation across otherwise similar customers
+- **PS21/5 kink**: customers previously above ENBP received forced price reductions in January 2022 — discontinuity in price change at the ENBP boundary provides quasi-experimental variation (with caveats about selection at the boundary)
+- **Competitor withdrawal**: a major competitor leaving a segment creates price shocks on aggregators that are plausibly exogenous at the individual level
 
-If you sell multiple lines (motor and home, for example), there are cross-price effects: a customer who lapses their motor policy may also cancel their home policy. Single-product demand models miss these. The `insurance_optimise.demand` submodule currently handles single-product demand; multi-product demand is a research-stage problem.
+### Survival models for CLV pricing
+
+The renewal probability from the DML model is a one-period estimate. For customer lifetime value pricing — deciding what price maximises expected total profit over the customer's lifetime — you need a survival function: the probability of still being a customer at t = 1, 2, 3, 5 years.
+
+The `causal_forest.exposure` submodule (`prepare_rate_outcome`) handles exposure-weighted outcomes for panel data. Full CLV pricing requires connecting this to a long-run customer model, which is beyond the scope of this module.
+
+### Multi-product demand effects
+
+If you write both motor and home, a motor lapse may trigger a home cancellation. Single-product demand models miss these cross-product effects. They matter for CLV calculations and for understanding the true cost of a lapse. This is currently a research-stage problem — no off-the-shelf solution handles it cleanly.

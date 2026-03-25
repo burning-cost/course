@@ -24,11 +24,11 @@ dbutils.library.restartPython()
 
 Here is what each library does in this module:
 
-- **insurance-monitoring** - the monitoring library we use throughout. Provides `PSICalculator`, `CSICalculator`, `AERatio`, `GiniDrift`, and `MonitoringReport`.
-- **insurance-datasets** - the synthetic UK motor portfolio. We use `load_motor()` to get consistent data across all modules.
-- **catboost** - we load the trained model from Module 8 and run predictions against current data.
-- **polars** - our data manipulation library. Fast, memory-efficient, and explicit about types.
-- **mlflow** - we load the registered model from the MLflow Model Registry and log monitoring results.
+- **insurance-monitoring** — the monitoring library we use throughout. Provides function-level APIs (`psi`, `csi`, `ae_ratio_ci`, `gini_coefficient`, `gini_drift_test`) and the `MonitoringReport` dataclass.
+- **insurance-datasets** — the synthetic UK motor portfolio. We use `load_motor()` to get consistent data across all modules.
+- **catboost** — we load the trained model from Module 8 and run predictions against current data.
+- **polars** — our data manipulation library. Fast, memory-efficient, and explicit about types.
+- **mlflow** — we load the registered model from the MLflow Model Registry and log monitoring results.
 
 ### Confirm the imports
 
@@ -42,17 +42,15 @@ import mlflow
 import mlflow.catboost
 from catboost import CatBoostRegressor
 from insurance_datasets import load_motor
-from insurance_monitoring import (
-    PSICalculator,
-    CSICalculator,
-    AERatio,
-    GiniDrift,
-    MonitoringReport,
-)
+
+from insurance_monitoring import MonitoringReport
+from insurance_monitoring.drift import psi, csi
+from insurance_monitoring.calibration import ae_ratio, ae_ratio_ci
+from insurance_monitoring.discrimination import gini_coefficient, gini_drift_test
 
 print(f"Polars:              {pl.__version__}")
-print(f"insurance-monitoring imported OK")
-print(f"insurance-datasets:  load_motor available")
+print("insurance-monitoring imported OK")
+print("insurance-datasets:  load_motor available")
 print("All imports OK")
 ```
 
@@ -68,40 +66,26 @@ from datetime import date
 # -----------------------------------------------------------------------
 # Unity Catalog coordinates
 # -----------------------------------------------------------------------
-# In Databricks Free Edition, your catalog is likely "main".
-# Change this to match your workspace.
 CATALOG = "main"
 SCHEMA  = "motor_monitoring"
 
 TABLES = {
-    "reference_data":  f"{CATALOG}.{SCHEMA}.reference_data",
-    "current_data":    f"{CATALOG}.{SCHEMA}.current_data",
-    "monitoring_log":  f"{CATALOG}.{SCHEMA}.monitoring_log",
-    "psi_results":     f"{CATALOG}.{SCHEMA}.psi_results",
-    "csi_results":     f"{CATALOG}.{SCHEMA}.csi_results",
-    "ae_results":      f"{CATALOG}.{SCHEMA}.ae_results",
-    "gini_results":    f"{CATALOG}.{SCHEMA}.gini_results",
+    "monitoring_log": f"{CATALOG}.{SCHEMA}.monitoring_log",
+    "csi_results":    f"{CATALOG}.{SCHEMA}.csi_results",
+    "ae_results":     f"{CATALOG}.{SCHEMA}.ae_results",
 }
 
 # -----------------------------------------------------------------------
 # Monitoring parameters
 # -----------------------------------------------------------------------
-# REFERENCE_DATE: when the model was trained / last validated.
-# CURRENT_DATE:   the end of the monitoring window we are assessing.
-# In production, CURRENT_DATE = str(date.today()).
-REFERENCE_DATE  = "2023-12-31"
-CURRENT_DATE    = "2024-06-30"
+REFERENCE_DATE = "2023-12-31"
+CURRENT_DATE   = "2024-06-30"
 
-# Model name in the MLflow Model Registry (from Module 8)
-MODEL_NAME      = "motor_frequency_catboost"
-MODEL_VERSION   = "1"
+MODEL_NAME    = "motor_frequency_catboost"
+MODEL_VERSION = "1"
 
-# PSI/CSI bin count. 10 is the standard; reduce to 5 for sparse features.
-N_BINS = 10
+N_BINS = 10  # PSI/CSI bin count. 10 is standard; reduce to 5 for sparse features.
 
-# -----------------------------------------------------------------------
-# Run identification
-# -----------------------------------------------------------------------
 RUN_DATE = str(date.today())
 
 print(f"Run date:          {RUN_DATE}")
@@ -125,17 +109,9 @@ If you are on `hive_metastore` rather than Unity Catalog, remove `{CATALOG}.` fr
 We need two time windows: the reference window (the data the model was trained and validated on) and the current window (recent live policies). We use `load_motor()` and split by policy start date:
 
 ```python
-# Load the full motor dataset
 df = load_motor()
 print(f"Total records: {df.shape[0]:,}")
-print(df.dtypes)
-```
 
-`load_motor()` returns a Polars DataFrame with UK motor policies. The schema includes `policy_start_date`, `claim_count`, `exposure`, `driver_age`, `vehicle_age`, `vehicle_group`, `region`, and several other features. We will use this schema throughout the module.
-
-In the next cell, split into reference and current:
-
-```python
 df_reference = df.filter(
     pl.col("policy_start_date") <= pl.lit(REFERENCE_DATE).str.to_date()
 )

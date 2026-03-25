@@ -12,8 +12,15 @@ The model has two spatial components that are combined into a single territory e
 
 The full territory effect for area i is:
 
-```bash
-b_i = sigma * (sqrt(rho / s) * phi_i + sqrt(1 - rho) * theta_i)
+```
+phi*_i = phi_i / sqrt(s)                                     # pre-scaled to unit marginal variance
+b_i = sigma * (sqrt(rho) * phi*_i + sqrt(1 - rho) * theta_i)
+```
+
+Or equivalently in a single line:
+
+```
+b_i = sigma * (sqrt(rho) * phi_i / sqrt(s) + sqrt(1 - rho) * theta_i)
 ```
 
 **sigma** is the overall scale of geographic variation. A sigma of 0.3 means territory effects have a standard deviation of about 0.3 on the log scale -- roughly a 30% spread around the mean.
@@ -23,7 +30,9 @@ b_i = sigma * (sqrt(rho / s) * phi_i + sqrt(1 - rho) * theta_i)
 - rho = 0: all geographic variation is area-specific noise, no spatial pattern
 - rho = 0.7: 70% of the territory variance is spatially structured
 
-**s** is the BYM2 scaling factor. This is a technical correction for the ICAR precision matrix. The ICAR distribution does not have a natural unit variance -- its scale depends on the graph topology. The scaling factor normalises phi to unit marginal variance, which means rho and sigma are interpretable regardless of whether you have a 10x10 grid or an 11,200-sector postcode map.
+**s** is the BYM2 scaling factor. This is a technical correction for the ICAR precision matrix. The ICAR distribution does not have a natural unit variance -- its scale depends on the graph topology. The scaling factor normalises phi to unit marginal variance by pre-scaling: `phi* = phi / sqrt(s)`. After this pre-scaling, Var(phi*) = Var(theta) = 1, so rho is the true proportion of marginal variance attributable to the spatial component. This interpretation holds regardless of whether you have a 10x10 grid or an 11,200-sector postcode map.
+
+**Why the pre-scaling matters:** An earlier and common shorthand writes the formula as `sqrt(rho / s) * phi_i`. This is algebraically equivalent for the point estimate of b, but it mixes the scale correction (1/sqrt(s)) into the mixing weight (sqrt(rho)), breaking rho's interpretation. When the scaling factor is not 1 -- which is always the case for real geography -- you can no longer read rho directly as the spatial variance proportion. The library implements the Riebler et al. (2016) pre-scaled form throughout.
 
 ### Why rho is the most important output
 
@@ -33,11 +42,12 @@ A rho posterior mean of 0.3 with a wide credibility interval from 0.05 to 0.65 t
 
 ### The full model specification
 
-```sql
+```
 y_i ~ Poisson(mu_i)
 log(mu_i) = log(E_i) + alpha + b_i
 
-b_i = sigma * (sqrt(rho / s) * phi_i + sqrt(1 - rho) * theta_i)
+phi*_i = phi_i / sqrt(s)     # pre-scaled ICAR component (unit marginal variance)
+b_i = sigma * (sqrt(rho) * phi*_i + sqrt(1 - rho) * theta_i)
 
 phi   ~ ICAR(W)           # structured; prior encodes neighbour similarity
 theta ~ Normal(0, 1)      # unstructured; independent per area

@@ -2,11 +2,9 @@
 
 ### What Gini drift measures
 
-The Gini coefficient (also called the normalised Gini, or twice the AUC minus one) measures how well the model *ranks* risks. A Gini of 0 means the model has no discriminatory power - it ranks risks randomly. A Gini of 1 means the model ranks risks perfectly. In practice, a good UK motor frequency model achieves a Gini of around 0.35-0.50 on held-out data.
+The Gini coefficient (equivalently, 2 × AUROC − 1 for binary outcomes) measures how well the model *ranks* risks. A Gini of 0 means the model has no discriminatory power. A Gini of 1 means the model ranks risks perfectly. A good UK motor frequency model achieves a Gini of around 0.35–0.50 on held-out data.
 
-Gini drift is the question: has the Gini changed between the reference period and the current period? A falling Gini means the model is less able to distinguish high-risk from low-risk policies. This is a form of concept drift - the features that previously predicted claims well are no longer predicting them as well.
-
-The `GiniDrift` test computes Ginis for both periods and runs a hypothesis test on the difference. The test statistic uses the DeLong variance estimator for the difference in AUCs, which properly accounts for the correlation structure when comparing two ROC curves.
+Gini drift is the question: has the Gini changed between the reference period and the current period? A falling Gini means the model is less able to distinguish high-risk from low-risk policies. This is a form of concept drift — the features that previously predicted claims well are no longer predicting them as well.
 
 ### Why Gini drift is a different signal from A/E
 
@@ -24,118 +22,113 @@ Understanding which type of drift you have determines the response:
 ### Computing Gini drift
 
 ```python
-from insurance_monitoring import GiniDrift
+from insurance_monitoring.discrimination import gini_coefficient, gini_drift_test
 
-gini_calc = GiniDrift()
+gini_ref = gini_coefficient(actual_ref, pred_ref, exposure=exposure_ref)
+gini_cur = gini_coefficient(actual_cur, pred_cur, exposure=exposure_cur)
 
-# We need binary claim outcomes (did a policy have a claim?)
-# For multi-claim policies, treat any claim as 1
-y_ref = (df_reference["claim_count"] > 0).to_numpy().astype(int)
-y_cur = (df_current["claim_count"] > 0).to_numpy().astype(int)
-
-gini_result = gini_calc.calculate(
-    y_ref=y_ref,
-    pred_ref=pred_ref,
-    y_cur=y_cur,
-    pred_cur=pred_cur,
+# gini_drift_test returns a GiniDriftResult dataclass with fields:
+#   reference_gini, current_gini, gini_change, z_statistic, p_value, significant
+result = gini_drift_test(
+    reference_gini=gini_ref,
+    current_gini=gini_cur,
+    reference_actual=actual_ref,
+    reference_predicted=pred_ref,
+    reference_exposure=exposure_ref,
+    current_actual=actual_cur,
+    current_predicted=pred_cur,
+    current_exposure=exposure_cur,
+    n_bootstrap=200,
 )
 
-print(f"Gini (reference): {gini_result.gini_ref:.4f}")
-print(f"Gini (current):   {gini_result.gini_cur:.4f}")
-print(f"Difference:       {gini_result.gini_cur - gini_result.gini_ref:+.4f}")
-print(f"Z-statistic:      {gini_result.z_stat:.4f}")
-print(f"P-value:          {gini_result.p_value:.4f}")
-print(f"Traffic light:    {gini_result.traffic_light}")
+print(f"Gini (reference): {result.reference_gini:.4f}")
+print(f"Gini (current):   {result.current_gini:.4f}")
+print(f"Change:           {result.gini_change:+.4f}")
+print(f"Z-statistic:      {result.z_statistic:.4f}")
+print(f"P-value:          {result.p_value:.4f}")
+print(f"Significant:      {result.significant}")
 ```
 
-`gini_ref` is the Gini computed on the reference period. `gini_cur` is the Gini computed on the current period. `z_stat` and `p_value` are from the DeLong test for equality of AUCs.
+The test uses a bootstrap variance estimator (Algorithm 2 from arXiv 2510.04556) on both reference and current periods. The default significance level is alpha=0.32 (the "one-sigma rule" recommended by the paper for monitoring, which catches drift earlier than alpha=0.05 at the cost of more false positives). Use `alpha=0.05` for confirmatory testing.
 
-A p-value below 0.05 means the Gini difference is statistically significant - the model's discrimination has changed, and it is unlikely to be due to random variation.
+A p-value below the threshold means the Gini difference is statistically significant — the model's discrimination has changed, and it is unlikely to be due to random variation.
 
 ### Interpreting the result
 
-A statistically significant fall in Gini is serious. The intuition: if a model's Gini falls from 0.42 to 0.35, the model is less able to separate claimants from non-claimants. Risks that were in the top quintile of predicted frequency are now less likely to actually be high-frequency claims. The pricing order is becoming noisier.
+A statistically significant fall in Gini is serious. If a model's Gini falls from 0.42 to 0.35, the model is less able to separate claimants from non-claimants. Risks that were in the top quintile of predicted frequency are now less likely to actually be high-frequency claims. The pricing order is becoming noisier.
 
 Check whether the Gini fall is:
 
-1. **Concentrated in a segment** - run the Gini calculation separately for different segments (age bands, regions) to identify where discrimination has fallen most
-2. **Consistent across time** - if you have monthly data, compute Gini in rolling windows to see if it is trending down or was a one-off
-3. **Correlated with a CSI-flagged feature** - if vehicle group has drifted significantly and Gini has fallen, a likely explanation is that vehicle group is a key discriminator and its relationship to risk has changed
+1. **Concentrated in a segment** — run `gini_coefficient()` separately for different segments (age bands, regions) to identify where discrimination has fallen most
+2. **Consistent across time** — if you have monthly data, compute Gini in rolling windows to see if it is trending down or was a one-off
+3. **Correlated with a CSI-flagged feature** — if vehicle group has drifted significantly and Gini has fallen, a likely explanation is that vehicle group is a key discriminator and its relationship to risk has changed
 
 ```python
-# Segment Gini analysis - run for age bands
+# Segment Gini analysis — run for age bands
 print("\nGini by driver age band:")
 print(f"{'Band':<15} {'Gini ref':>10}  {'Gini cur':>10}  {'p-value':>10}")
 print("-" * 50)
 
-for low, high, label in segments["driver_age_band"]:
-    ref_mask = (df_reference["driver_age"] >= low) & (df_reference["driver_age"] < high)
-    cur_mask = (df_current["driver_age"] >= low) & (df_current["driver_age"] < high)
+age_bands = [(17, 25, "17-24"), (25, 40, "25-39"), (40, 60, "40-59"), (60, 100, "60+")]
 
-    seg_y_ref = y_ref[ref_mask.to_numpy()]
-    seg_pred_ref = pred_ref[ref_mask.to_numpy()]
-    seg_y_cur = y_cur[cur_mask.to_numpy()]
-    seg_pred_cur = pred_cur[cur_mask.to_numpy()]
+for low, high, label in age_bands:
+    ref_mask = ((df_reference["driver_age"] >= low) & (df_reference["driver_age"] < high)).to_numpy()
+    cur_mask = ((df_current["driver_age"] >= low) & (df_current["driver_age"] < high)).to_numpy()
 
-    # Skip if not enough claims in either period
-    if seg_y_ref.sum() < 10 or seg_y_cur.sum() < 10:
+    if actual_ref[ref_mask].sum() < 10 or actual_cur[cur_mask].sum() < 10:
         print(f"{label:<15} {'(insufficient claims)'}")
         continue
 
-    seg_result = gini_calc.calculate(
-        y_ref=seg_y_ref,
-        pred_ref=seg_pred_ref,
-        y_cur=seg_y_cur,
-        pred_cur=seg_pred_cur,
+    g_ref_seg = gini_coefficient(actual_ref[ref_mask], pred_ref[ref_mask])
+    g_cur_seg = gini_coefficient(actual_cur[cur_mask], pred_cur[cur_mask])
+
+    seg_result = gini_drift_test(
+        reference_gini=g_ref_seg,
+        current_gini=g_cur_seg,
+        reference_actual=actual_ref[ref_mask],
+        reference_predicted=pred_ref[ref_mask],
+        current_actual=actual_cur[cur_mask],
+        current_predicted=pred_cur[cur_mask],
+        n_bootstrap=200,
     )
-    print(f"{label:<15} {seg_result.gini_ref:>10.4f}  {seg_result.gini_cur:>10.4f}  "
+    print(f"{label:<15} {seg_result.reference_gini:>10.4f}  {seg_result.current_gini:>10.4f}  "
           f"{seg_result.p_value:>10.4f}")
 ```
 
 ### Visualising Gini drift
 
-Plotting the ROC curves for reference and current periods side by side gives an immediate visual of whether and where discrimination has changed:
+Plotting the ROC curves for reference and current periods gives an immediate visual of whether and where discrimination has changed:
 
 ```python
 from sklearn.metrics import roc_curve
 
 fig, axes = plt.subplots(1, 2, figsize=(14, 6))
 
-# Reference ROC
-fpr_ref, tpr_ref, _ = roc_curve(y_ref, pred_ref)
+fpr_ref, tpr_ref, _ = roc_curve((actual_ref > 0).astype(int), pred_ref)
 axes[0].plot(fpr_ref, tpr_ref, color="steelblue", linewidth=2,
-             label=f"Reference (Gini={gini_result.gini_ref:.3f})")
+             label=f"Reference (Gini={result.reference_gini:.3f})")
 axes[0].plot([0, 1], [0, 1], "k--", alpha=0.5)
 axes[0].set_xlabel("False positive rate")
 axes[0].set_ylabel("True positive rate")
-axes[0].set_title("ROC - Reference period")
+axes[0].set_title("ROC — Reference period")
 axes[0].legend()
 
-# Current ROC
-fpr_cur, tpr_cur, _ = roc_curve(y_cur, pred_cur)
+fpr_cur, tpr_cur, _ = roc_curve((actual_cur > 0).astype(int), pred_cur)
 axes[1].plot(fpr_cur, tpr_cur, color="tomato", linewidth=2,
-             label=f"Current (Gini={gini_result.gini_cur:.3f})")
+             label=f"Current (Gini={result.current_gini:.3f})")
 axes[1].plot([0, 1], [0, 1], "k--", alpha=0.5)
 axes[1].set_xlabel("False positive rate")
 axes[1].set_ylabel("True positive rate")
-axes[1].set_title("ROC - Current period")
+axes[1].set_title("ROC — Current period")
 axes[1].legend()
 
 plt.suptitle(
-    f"Gini drift: {gini_result.gini_ref:.3f} -> {gini_result.gini_cur:.3f}  "
-    f"(p={gini_result.p_value:.3f})",
+    f"Gini drift: {result.reference_gini:.3f} → {result.current_gini:.3f}  "
+    f"(p={result.p_value:.3f})",
     fontsize=13
 )
 plt.tight_layout()
-plt.savefig("/tmp/gini_drift.png", dpi=150, bbox_inches="tight")
 plt.show()
 ```
 
-Store the result:
-
-```python
-# Store for MonitoringReport
-gini_drift = gini_result
-```
-
-Now we have all four metrics. Part 8 assembles them into a `MonitoringReport`.
+Now we have all the individual metrics. Part 8 assembles them into a `MonitoringReport`.

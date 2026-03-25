@@ -1,96 +1,85 @@
-## Part 6: Building a retention model
+## Part 6: Pre-flight diagnostic — treatment variation
 
-The retention model is the renewal equivalent of the conversion model. It predicts the probability that an existing customer renews, given their current features and the price change from last year.
+Before fitting the DML estimator, check whether the data has enough exogenous price variation to identify elasticity. This is not optional. On many insurance renewal datasets, the price change is so tightly determined by the rating system that there is almost nothing left for DML to use. Running the estimator on such data produces confident-looking but meaningless results.
 
-The treatment variable is different from conversion. For retention, what the customer reacts to is not the absolute price but the change from what they paid before. A customer paying £600 who is offered £630 sees a 5% increase. Whether that feels expensive depends on their expectations, their tenure, and the market alternatives. The standard treatment is `log(renewal_price / prior_year_price)`.
+### What the diagnostic measures
 
-### Fitting the logistic retention model
+The DML estimator residualises the treatment D (log price change) on the confounders X. The residual D̃ = D − E[D|X] is the price variation not explained by risk factors. DML uses D̃ for identification.
+
+The diagnostic reports two things:
+
+- **Var(D̃) / Var(D)**: the fraction of price variation that survives conditioning on observables. Below 0.10 is the danger zone.
+- **R² of E[D|X]**: how well the nuisance model predicts the treatment from risk factors. Above 0.90 means the price is nearly deterministic.
+
+If either threshold is breached, the estimator's confidence intervals blow up and the point estimate is unreliable — the same failure mode as a weak instrument in an IV regression.
+
+### Running the diagnostic
 
 ```python
 %md
-## Part 6: Retention model
+## Part 6: Treatment variation diagnostic
 ```
 
 ```python
-retention_model = RetentionModel(
-    model_type="logistic",
-    outcome_col="lapsed",
-    price_change_col="log_price_change",
-    feature_cols=["tenure_years", "ncd_years", "payment_method",
-                  "age", "channel", "region"],
-    cat_features=["payment_method", "channel", "region"],
+confounders = ["age", "ncd_years", "vehicle_group", "region", "channel"]
+
+diag = ElasticityDiagnostics()
+report = diag.treatment_variation_report(
+    df,
+    treatment="log_price_change",
+    confounders=confounders,
 )
+print(report.summary())
+```
 
-# The retention dataset uses 'lapsed' as the outcome (1 = lapsed, 0 = renewed)
-# We need to ensure this column exists. The make_renewal_data dataset uses 'renewed'.
-# Add a lapsed column:
-df_renewals_with_lapsed = df_renewals.with_columns(
-    (1 - pl.col("renewed")).alias("lapsed")
+On `make_renewal_data(price_variation_sd=0.08)`, you should see:
+
+```
+Treatment Variation Diagnostic
+========================================
+N observations:          50,000
+Var(D):                  0.006823
+Var(D̃):                 0.003801
+Var(D̃)/Var(D):          0.5570  (OK)
+Treatment nuisance R²:   0.4430  (OK)
+
+Treatment variation is sufficient for DML identification.
+```
+
+A variation fraction of 0.557 means 55.7% of the price change variation is not explained by observable risk factors. Healthy. On real data without A/B pricing experiments, this fraction can easily be 0.05 or lower.
+
+### Simulating the near-deterministic case
+
+```python
+# Generate data with near-zero exogenous price variation
+df_ndp = make_renewal_data(n=50_000, seed=42, near_deterministic=True)
+
+report_ndp = diag.treatment_variation_report(
+    df_ndp,
+    treatment="log_price_change",
+    confounders=confounders,
 )
-
-retention_model.fit(df_renewals_with_lapsed)
-
-lapse_probs = retention_model.predict_proba(df_renewals_with_lapsed)
-print(f"Mean predicted lapse rate: {lapse_probs.mean():.3f}")
-print(f"Mean observed lapse rate:  {df_renewals_with_lapsed['lapsed'].mean():.3f}")
+print(report_ndp.summary())
 ```
 
-Now look at the model summary to understand which factors drive lapse:
+You will see `weak_treatment=True` with suggestions including: running randomised A/B price tests, using panel data with within-customer variation across renewal years, exploiting bulk re-rating quasi-experiments, and using rate change timing heterogeneity across anniversary dates.
+
+If your real dataset fails this check, stop here. Do not run the DML estimator on it — the output will look like a proper result but the number is not trustworthy. Take the `TreatmentVariationReport` to the pricing director as the basis for a conversation about how to generate identifiable price variation.
+
+### The calibration check
+
+As a secondary sanity check, look at the raw renewal rate by decile of price change:
 
 ```python
-print(retention_model.summary())
-```
-
-Interpret the coefficients. You should see:
-
-- `log_price_change`: negative coefficient on lapse (higher price change = more lapse), positive on renewal. This is the price effect.
-- `tenure_years`: negative on lapse. Longer-tenured customers are stickier.
-- `payment_method`: direct debit customers lapse less than annual payers. This is a well-established empirical finding in UK motor: people who pay monthly by DD face friction to cancel.
-- `ncd_years`: higher NCD customers lapse less, because they value their NCD protection and know it is insurer-specific.
-
-### Predicting renewal probability
-
-```python
-# The model predicts lapse probability. Renewal probability is the complement.
-renewal_probs = retention_model.predict_renewal_proba(df_renewals_with_lapsed)
-print(f"Mean predicted renewal prob: {renewal_probs.mean():.3f}")
-print(f"Observed renewal rate:       {df_renewals['renewed'].mean():.3f}")
-```
-
-### Sensitivity analysis: how much does price change matter?
-
-```python
-# Price sensitivity: dP(lapse)/d(log_price_change) per segment
-sensitivity = retention_model.price_sensitivity(df_renewals_with_lapsed)
-print(f"Mean price sensitivity: {sensitivity.mean():.4f}")
-print(f"  (negative = higher price → more lapse)")
-```
-
-Now look at this by channel - the segmentation that matters most for commercial decisions:
-
-```python
-# Combine sensitivity with channel information using Polars
-sensitivity_pl = (
-    df_renewals
-    .select(["channel", "ncd_years"])
-    .with_columns(pl.Series("sensitivity", sensitivity.to_numpy()))
-    .group_by("channel")
-    .agg(pl.col("sensitivity").mean().alias("mean_sensitivity"))
-    .sort("mean_sensitivity")
+cal_summary = diag.calibration_summary(
+    df,
+    outcome="renewed",
+    treatment="log_price_change",
+    n_bins=10,
 )
-
-print("Mean price sensitivity by channel:")
-print(sensitivity_pl)
+print(cal_summary)
 ```
 
-PCW customers should show higher price sensitivity (more negative) than direct customers. Broker customers (if present) should be the least sensitive - they have an advisor relationship that creates switching friction.
+Renewal rate should fall as price change increases. If you see a flat or positive relationship, the confounding is severe enough that the raw data already shows no price signal. This is a red flag even if Var(D̃)/Var(D) is above the threshold.
 
-### When to use a CatBoost retention model
-
-The logistic retention model is the right default. It is interpretable, calibratable, and understood by compliance and actuarial governance. Use a CatBoost retention model when:
-
-1. You have a large book (50k+ policies) and are seeing consistent lift problems in the one-way diagnostics
-2. The interaction between tenure and channel is important and the logistic model is not capturing it
-3. You are optimising for accuracy of predicted lapse rates by segment rather than interpretability
-
-To fit a CatBoost retention model, change `model_type="catboost"` and add `cat_features=["payment_method", "channel", "region"]`. The fit takes longer but the API is identical. We do not run it here to save time on Databricks Free Edition.
+On the synthetic data you will see a clean downward pattern: the lowest-price-change decile has the highest renewal rate, the highest-price-change decile the lowest. That monotone pattern is the signal DML will exploit.

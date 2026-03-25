@@ -1,23 +1,30 @@
 ## Part 17: Summary
 
-This module covered:
+This module covered the full pipeline from confounding problem to FCA-compliant per-policy pricing.
 
-1. Why the risk model is not sufficient for commercial pricing, and what demand modelling adds
-2. The confounding problem in naive regression of conversion on price
-3. Building and validating conversion and retention models (logistic and CatBoost backends)
-4. The near-deterministic price problem and how to diagnose it before fitting any elasticity model
-5. Double Machine Learning for causal price elasticity estimation
-6. Heterogeneous CATE estimation via CausalForestDML
-7. The elasticity surface: visualising price sensitivity across two dimensions
-8. Building a portfolio demand curve
-9. Per-policy profit-maximising optimisation subject to the PS21/5 ENBP constraint
-10. The ENBP compliance audit at the individual policy level
-11. Connecting the demand model to the rate optimiser from Module 7
-12. Practical considerations for production deployment
+**The methodology:**
 
-The core methodological lesson is that the naive regression approach to elasticity estimation is systematically biased in insurance data. The bias is predictable in direction (the naive estimate is typically more negative than the true elasticity) and can be corrected using DML. Running the treatment variation diagnostic before every elasticity estimation is not optional - it is the test that confirms the data is good enough to use.
+The naive regression of renewal probability on quoted price is biased because risk factors drive both price and renewal behaviour. Double Machine Learning (Chernozhukov et al. 2018) removes this bias by residualising both the outcome and the treatment on the observable confounders before estimating the price coefficient. The pre-flight diagnostic — Var(D̃)/Var(D) — confirms there is enough residual price variation to identify the causal effect. Below 0.10, the result is not trustworthy.
 
-The FCA context means that these tools have regulatory as well as commercial value. A causal elasticity model with an audit trail is a better answer to a section 166 review than a judgment-based coefficient. The ENBP audit at the per-policy level satisfies the FCA's expectation of individual-level compliance checking, not just average compliance.
+**The estimator:**
+
+`RenewalElasticityEstimator` wraps `CausalForestDML` from EconML with CatBoost nuisance models. It produces:
+- An average treatment effect (ATE) with 95% CI: the portfolio-average semi-elasticity
+- Per-customer CATEs: individual-level price sensitivity
+- Group average treatment effects (GATEs) by any categorical variable
+- Per-customer confidence intervals for the CATEs
+
+**The heterogeneity:**
+
+Price sensitivity varies substantially across the book. In a typical UK motor portfolio, NCD-0 PCW customers are 3–4× more elastic than NCD-5 direct customers. Using a single average elasticity in pricing treats these customers identically. The GATE table makes the differences explicit and confidence-interval-bounded.
+
+**The optimisation:**
+
+`RenewalPricingOptimiser` takes the per-customer CATEs and finds the profit-maximising renewal price for each policy, with `tech_prem` as the floor and `enbp` as the hard PS21/5 ceiling. For policies where the ENBP constraint binds — the profit-maximising price would be above ENBP — the optimiser prices at the ceiling and records the constraint as binding. The fraction of binding constraints is the quantified commercial cost of PS21/5.
+
+**The compliance:**
+
+`enbp_audit()` produces the per-policy compliance report for FCA ICOBS 6B.2. It is saved to a Delta table with run metadata for the audit trail. The FCA's expectation is individual-level compliance, not average-level. The audit table is the artefact you produce for a section 166 request.
 
 ---
 
@@ -25,21 +32,23 @@ The FCA context means that these tools have regulatory as well as commercial val
 
 | Library | Version | Purpose |
 |---------|---------|---------|
-| `insurance-optimise` (via `insurance_optimise.demand`) | latest | Conversion, retention, and global elasticity models |
-| `insurance-causal` (via `insurance_causal.elasticity`) | latest | Heterogeneous elasticity with CausalForestDML, optimiser, audit |
-| `catboost` | 1.2+ | Nuisance models in DML, conversion and retention classifiers |
+| `insurance-causal` | latest | DML elasticity, diagnostics, surface, optimiser, audit |
+| `catboost` | 1.2+ | Nuisance models in CausalForestDML |
 | `econml` | 0.15+ | CausalForestDML estimator |
-| `polars` | 0.20+ | Data manipulation |
+| `statsmodels` | 0.14+ | Naive logistic benchmark |
+| `polars` | 0.20+ | Data manipulation throughout |
 | `numpy` | 1.26+ | Numerical operations |
-| `matplotlib` | 3.7+ | Elasticity surface and demand curve plots |
+| `matplotlib` | 3.7+ | Surface and demand curve plots |
+| `mlflow` | 2.0+ | Experiment tracking and audit trail |
 
 ---
 
 ## References
 
-- Chernozhukov, V., Chetverikov, D., Demirer, M., Duflo, E., Hansen, C., Newey, W., & Robins, J. (2018). Double/debiased machine learning for treatment and structural parameters. *Econometrics Journal*, 21(1), C1-C68.
-- Athey, S. & Wager, S. (2019). Estimating treatment effects with causal forests. *Annals of Statistics*, 47(2), 1148-1178.
-- Guven, M. & McPhail, M. (2013). Beyond the cost model: demand modelling for P&C pricing. *CAS Forum*.
-- Guelman, L. & Guillén, M. (2014). A causal inference approach to measure price elasticity in automobile insurance. *Expert Systems with Applications*, 41(2), 387-396.
+- Chernozhukov, V., Chetverikov, D., Demirer, M., Duflo, E., Hansen, C., Newey, W., & Robins, J. (2018). Double/debiased machine learning for treatment and structural parameters. *Econometrics Journal*, 21(1), C1–C68.
+- Athey, S., Tibshirani, J., & Wager, S. (2019). Generalized random forests. *Annals of Statistics*, 47(2), 1148–1178.
+- Chernozhukov, V., Demirer, M., Duflo, E., & Fernandez-Val, I. (2020/2025). Generic machine learning inference on heterogeneous treatment effects in randomized experiments. *NBER Working Paper 24678*.
+- Chernozhukov, V., Newey, W., & Singh, R. (2022). Automatic debiased machine learning of causal and structural effects. *Econometrica*, 90(3), 967–1027.
 - FCA PS21/5 (2021). General Insurance Pricing Practices Policy Statement.
-- FCA EP25/2 (July 2025). Evaluation of GIPP Remedies.
+- FCA ICOBS 6B.2 (2022). Renewal pricing rules.
+- Guelman, L., & Guillén, M. (2014). A causal inference approach to measure price elasticity in automobile insurance. *Expert Systems with Applications*, 41(2), 387–396.

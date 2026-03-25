@@ -39,8 +39,8 @@ Here is the full sequence of cells in the monitoring notebook, in order:
 10. CSI for each feature
 11. A/E ratio at portfolio level and by segment
 12. Gini drift test
-13. Build `MonitoringReport`, call `.summary()`
-14. Print and save the report as JSON and HTML
+13. Build `MonitoringReport`: read `report.recommendation`, `report.results_`
+14. Print and save the report as JSON (`report.to_dict()`, `report.to_polars()`)
 15. Write summary to `monitoring_log` Delta table
 16. Write CSI detail to `csi_results` Delta table
 17. Write A/E detail to `ae_results` Delta table

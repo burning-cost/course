@@ -1,37 +1,31 @@
-## Part 10: Stage 6 -- Final models and MLflow logging
+## Part 10: Stage 6 — Final models and MLflow logging
 
-The final models train on all data except the held-out test year. The test year is the most recent accident year in the dataset -- in this case, 2023. It is held out entirely from training and used only for final evaluation. This is separate from the CV folds, which used 2022 and 2023 for validation in different folds.
+The final models train on all data except the held-out test year. The test year is the most recent accident year — 2025 in our synthetic data. It is entirely separate from the CV folds: it was not used for tuning and it was not used to select Optuna parameters. Its deviance is the honest out-of-sample estimate of the model's future performance.
 
 Add a markdown cell:
 
 ```python
 %md
-## Stage 6: Final models -- frequency (Poisson) and severity (Gamma/Tweedie)
-```
-
-### Splitting train and test
-
-```python
-import json
-import mlflow
-import mlflow.catboost
-
-max_year = int(features_pd["accident_year"].max())
-print(f"Test year (held out from training): {max_year}")
-
-# Train set: all years except the test year
-df_train = features_pd[features_pd["accident_year"] < max_year].copy()
-df_test  = features_pd[features_pd["accident_year"] == max_year].copy()
-
-print(f"Training rows: {len(df_train):,}  ({df_train['accident_year'].unique()} years)")
-print(f"Test rows:     {len(df_test):,}   (year {max_year})")
-print(f"Training claims: {df_train['claim_count'].sum():,}")
-print(f"Test claims:     {df_test['claim_count'].sum():,}")
+## Stage 6: Final models — frequency and severity
 ```
 
 ### Frequency model
 
 ```python
+import mlflow
+import mlflow.catboost
+
+max_year = int(features_pd["accident_year"].max())
+df_train = features_pd[features_pd["accident_year"] < max_year].copy()
+df_test  = features_pd[features_pd["accident_year"] == max_year].copy()
+
+print(f"Training years: {sorted(df_train['accident_year'].unique().tolist())}")
+print(f"Test year:      {max_year}")
+print(f"Training rows:  {len(df_train):,}")
+print(f"Test rows:      {len(df_test):,}")
+print(f"Training claims:{df_train['claim_count'].sum():,}")
+print(f"Test claims:    {df_test['claim_count'].sum():,}")
+
 X_train = df_train[FEATURE_COLS]
 y_train = df_train["claim_count"].values
 w_train = df_train["exposure"].values
@@ -40,7 +34,6 @@ X_test  = df_test[FEATURE_COLS]
 y_test  = df_test["claim_count"].values
 w_test  = df_test["exposure"].values
 
-# Build Pools with the log-exposure offset (CRITICAL: baseline, not weight)
 train_pool = Pool(
     X_train, y_train,
     baseline=np.log(np.clip(w_train, 1e-6, None)),
@@ -53,7 +46,6 @@ test_pool = Pool(
 )
 
 with mlflow.start_run(run_name="freq_model_m08") as freq_run:
-    # Log all parameters that determined this model
     mlflow.log_params(best_freq_params)
     mlflow.log_params({
         "model_type":         "catboost_poisson",
@@ -63,13 +55,12 @@ with mlflow.start_run(run_name="freq_model_m08") as freq_run:
         "feat_table_version": int(feat_version),
         "feature_cols":       json.dumps(FEATURE_COLS),
         "cat_features":       json.dumps(CAT_FEATURES),
+        "offset":             "log_exposure",
         "train_years":        str(sorted(df_train["accident_year"].unique().tolist())),
         "test_year":          str(max_year),
         "run_date":           RUN_DATE,
-        "offset":             "log_exposure",   # explicit: this model uses the correct offset
     })
 
-    # Fit the final frequency model
     freq_model = CatBoostRegressor(**best_freq_params)
     freq_model.fit(train_pool, eval_set=test_pool)
 
@@ -79,188 +70,120 @@ with mlflow.start_run(run_name="freq_model_m08") as freq_run:
 
     mlflow.log_metric("test_poisson_deviance", test_dev)
     mlflow.log_metric("mean_cv_deviance",      mean_cv_deviance)
+    mlflow.log_metric("generalisation_gap",    test_dev - mean_cv_deviance)
     mlflow.log_metric("n_training_rows",       len(df_train))
     mlflow.log_metric("n_test_rows",           len(df_test))
 
-    # Log the model artefact to MLflow Model Registry
     mlflow.catboost.log_model(freq_model, "freq_model")
+
+    # Log the feature spec alongside the model
+    mlflow.log_artifact("/tmp/feature_spec.json", artifact_path="feature_spec")
+
     freq_run_id = freq_run.info.run_id
 
-print(f"Frequency model trained and logged.")
-print(f"MLflow run ID: {freq_run_id}")
-print(f"Test Poisson deviance: {test_dev:.5f}")
-print(f"Mean CV deviance:      {mean_cv_deviance:.5f}")
-print(f"Generalisation gap:    {test_dev - mean_cv_deviance:.5f} "
-      f"({'within tolerance' if abs(test_dev - mean_cv_deviance) < 0.01 else 'REVIEW: may be overfitting'})")
+gen_gap = test_dev - mean_cv_deviance
+print(f"Frequency model logged: {freq_run_id}")
+print(f"Test Poisson deviance:  {test_dev:.5f}")
+print(f"Mean CV deviance:       {mean_cv_deviance:.5f}")
+print(f"Generalisation gap:     {gen_gap:.5f}  "
+      f"({'OK' if abs(gen_gap) < 0.015 else 'REVIEW: large gap'})")
 ```
 
-**What is the generalisation gap?** The gap between the mean CV deviance and the test deviance tells you whether the model generalises from its validation period to the final test year. A small positive gap (test deviance slightly higher than CV deviance) is normal and expected -- the test year is a different period. A large gap (more than 0.01 for this dataset) suggests the model is tuned too aggressively to the validation period, or that the test year's distribution is materially different from training.
+**The generalisation gap.** A gap of near zero means the tuned model performs as well on the test year as it did on the CV validation years. A positive gap (test deviance higher than CV deviance) is normal — the test year is a genuinely different period. A gap larger than 0.015 warrants investigation: either the model is overfitting to the validation periods, or the test year's distribution is materially different from training. Check the accident year frequency trends from Stage 2 first.
 
-### Writing frequency predictions to Delta
+### Frequency predictions and pure premium
 
 ```python
-# Predict frequency for the full test set
-freq_pred_all = freq_model.predict(test_pool)
-
-# The model predicts claim counts (exposure * frequency).
-# Divide by exposure to get frequency per policy-year.
-freq_rate_all = freq_pred_all / np.clip(w_test, 1e-6, None)
-
-freq_pred_df = pl.DataFrame({
-    "policy_id":          df_test["policy_id"].tolist(),
-    "accident_year":      df_test["accident_year"].tolist(),
-    "exposure":           w_test.tolist(),
-    "claim_count_actual": y_test.tolist(),
-    "freq_pred_count":    freq_pred_all.tolist(),
-    "freq_pred_rate":     freq_rate_all.tolist(),
-    "mlflow_run_id":      [freq_run_id] * len(df_test),
-    "run_date":           [RUN_DATE] * len(df_test),
-})
-
-spark.createDataFrame(freq_pred_df.to_pandas()) \
-    .write.format("delta") \
-    .mode("overwrite") \
-    .option("overwriteSchema", "true") \
-    .saveAsTable(TABLES["freq_predictions"])
-
-freq_pred_version = spark.sql(
-    f"DESCRIBE HISTORY {TABLES['freq_predictions']} LIMIT 1"
-).collect()[0]["version"]
-
-print(f"Frequency predictions written: {len(freq_pred_df):,} rows")
-print(f"Table: {TABLES['freq_predictions']} (version {freq_pred_version})")
+# Frequency rate = predicted count / exposure
+freq_rate_all = freq_pred_test / np.clip(w_test, 1e-6, None)
 ```
 
 ### Severity model
 
+The severity model requires a three-way temporal split for valid conformal calibration (Part 12). We train the severity model on 2022-2023, calibrate conformal on 2024, and test on 2025. This ensures the calibration residuals are genuinely out-of-sample.
+
 ```python
-# -----------------------------------------------------------------------
-# Severity model: Tweedie with variance_power=2 (Gamma distribution)
-#
-# Trains on policies with at least one claim only.
-# Target: mean severity per claim (claim_amount / claim_count).
-# Weight: claim count (more claims = more evidence about this risk's severity).
-# No exposure offset -- we are modelling severity given a claim, not claim counts.
-# -----------------------------------------------------------------------
+# Severity model trains on claims-only data, excluding the calibration year
+# so that Stage 8 can use the calibration year as a true holdout.
+cal_year    = sorted(df_train["accident_year"].unique())[-1]   # 2024
+df_sev_model = df_train[
+    (df_train["accident_year"] < cal_year) & (df_train["claim_count"] > 0)
+].copy()
+df_sev_test = df_test[df_test["claim_count"] > 0].copy()
 
-df_sev_train = df_train[df_train["claim_count"] > 0].copy()
-df_sev_test  = df_test[df_test["claim_count"]  > 0].copy()
+df_sev_model["mean_sev"] = (df_sev_model["incurred_loss"] / df_sev_model["claim_count"])
+df_sev_test["mean_sev"]  = (df_sev_test["incurred_loss"]  / df_sev_test["claim_count"])
 
-df_sev_train["mean_sev"] = df_sev_train["claim_amount"] / df_sev_train["claim_count"]
-df_sev_test["mean_sev"]  = df_sev_test["claim_amount"]  / df_sev_test["claim_count"]
-
-# -----------------------------------------------------------------------
-# Three-way temporal split for conformal calibration (Module 5 principle).
-#
-# The conformal predictor in Stage 8 requires a calibration set that is
-# out-of-sample relative to the severity model. If we trained on ALL of
-# df_sev_train (including 2022) and then calibrated on 2022, the calibration
-# residuals would reflect in-sample fit, not genuine out-of-sample error.
-# The conformal coverage guarantee would be invalid.
-#
-# Split:
-#   Train severity model on: 2019-2021 (df_sev_model)
-#   Calibrate conformal on:  2022      (extracted in Stage 8 as cal_year)
-#   Test on:                 2023      (df_sev_test / df_test)
-# -----------------------------------------------------------------------
-cal_year = sorted(df_sev_train["accident_year"].unique())[-1]   # 2022
-df_sev_model = df_sev_train[df_sev_train["accident_year"] < cal_year].copy()
-print(f"Severity model training years: {sorted(df_sev_model['accident_year'].unique())}")
-print(f"Conformal calibration year:   {cal_year}")
-
-X_sev_train = df_sev_model[FEATURE_COLS]
-y_sev_train = df_sev_model["mean_sev"].values
-w_sev_train = df_sev_model["claim_count"].values
-
-X_sev_test  = df_sev_test[FEATURE_COLS]
-y_sev_test  = df_sev_test["mean_sev"].values
-w_sev_test  = df_sev_test["claim_count"].values
+print(f"Severity training years: {sorted(df_sev_model['accident_year'].unique().tolist())}")
+print(f"Conformal calibration year: {cal_year}")
+print(f"Severity training n:   {len(df_sev_model):,} claims-only")
+print(f"Severity test n:       {len(df_sev_test):,} claims-only")
 
 sev_train_pool = Pool(
-    X_sev_train, y_sev_train,
-    weight=w_sev_train,
+    df_sev_model[FEATURE_COLS],
+    df_sev_model["mean_sev"].values,
+    weight=df_sev_model["claim_count"].values,
     cat_features=CAT_FEATURES,
 )
 sev_test_pool = Pool(
-    X_sev_test, y_sev_test,
-    weight=w_sev_test,
+    df_sev_test[FEATURE_COLS],
+    df_sev_test["mean_sev"].values,
+    weight=df_sev_test["claim_count"].values,
     cat_features=CAT_FEATURES,
 )
-
-print(f"Severity training: {len(df_sev_model):,} policies with claims (excl. cal year {cal_year})")
-print(f"Severity test:     {len(df_sev_test):,} policies with claims")
 
 with mlflow.start_run(run_name="sev_model_m08") as sev_run:
     mlflow.log_params(best_sev_params)
     mlflow.log_params({
-        "model_type":         "catboost_gamma",
-        "raw_table":          TABLES["raw"],
-        "raw_table_version":  int(raw_version),
-        "feat_table":         TABLES["features"],
-        "feat_table_version": int(feat_version),
-        "feature_cols":       json.dumps(FEATURE_COLS),
-        "cat_features":       json.dumps(CAT_FEATURES),
-        "train_years":        str(sorted(df_sev_model["accident_year"].unique().tolist())),
-        "test_year":          str(max_year),
-        "run_date":           RUN_DATE,
-        "severity_target":    "mean_sev_per_claim",
-        "severity_weight":    "claim_count",
+        "model_type":       "catboost_gamma",
+        "severity_target":  "mean_cost_per_claim",
+        "severity_weight":  "claim_count",
+        "train_years":      str(sorted(df_sev_model["accident_year"].unique().tolist())),
+        "cal_year":         str(cal_year),
+        "test_year":        str(max_year),
+        "run_date":         RUN_DATE,
     })
 
     sev_model = CatBoostRegressor(**best_sev_params)
     sev_model.fit(sev_train_pool, eval_set=sev_test_pool)
 
     sev_pred_test = sev_model.predict(sev_test_pool)
-    sev_rmse = float(np.sqrt(np.mean((y_sev_test - sev_pred_test)**2)))
+    sev_rmse = float(np.sqrt(np.mean((df_sev_test["mean_sev"].values - sev_pred_test) ** 2)))
 
     mlflow.log_metric("test_severity_rmse",  sev_rmse)
-    mlflow.log_metric("n_sev_training_rows", len(df_sev_model))
-    mlflow.log_metric("n_sev_test_rows",     len(df_sev_test))
+    mlflow.log_metric("n_sev_training",      len(df_sev_model))
+    mlflow.log_metric("n_sev_test",          len(df_sev_test))
     mlflow.catboost.log_model(sev_model, "sev_model")
     sev_run_id = sev_run.info.run_id
 
-print(f"Severity model trained and logged.")
-print(f"MLflow run ID: {sev_run_id}")
-print(f"Test severity RMSE: £{sev_rmse:,.0f}")
+print(f"Severity model logged: {sev_run_id}")
+print(f"Test severity RMSE:    £{sev_rmse:,.0f}")
 ```
 
-### Computing pure premiums for the full test set
+### Pure premium for all test policies
 
-The pure premium is frequency times severity. The critical step here is predicting severity for ALL test policies, not just those with claims. The severity model predicts expected severity given a claim occurs -- it is a valid prediction for any policy, regardless of whether it had a claim in the test year.
-
-The earlier versions of this pipeline used `fillna(sev_pred.mean())` to fill in severity for zero-claim policies, where `sev_pred.mean()` was the mean over the claims-only prediction set. This is wrong: the mean severity for policies that had claims is biased upward relative to the population. Zero-claim policies tend to be lower-risk, so the correct imputed severity is lower than the claims-only mean.
-
-The correct approach is to predict severity for all policies:
+The severity model predicts expected cost given a claim occurs. This is a valid prediction for any policy — including zero-claim policies — because we are asking "if this risk has a claim, how much would it cost?" The pure premium is frequency times severity for every policy in the test set.
 
 ```python
-# Predict severity for ALL test policies (not just those with claims)
-# The severity model predicts: expected severity given a claim occurred
-# This is a meaningful prediction for any policy
-
-X_all_test = df_test[FEATURE_COLS]
-
-# Pool for full test set (no labels needed for prediction)
-all_test_pool_sev = Pool(X_all_test, cat_features=CAT_FEATURES)
+# Predict severity for ALL test policies (claims and non-claims)
+all_test_pool_sev = Pool(X_test, cat_features=CAT_FEATURES)
 sev_pred_all = sev_model.predict(all_test_pool_sev)
 
-# Pure premium = predicted frequency rate * predicted severity
-# This is the expected loss cost per policy-year for each risk
 pure_premium = freq_rate_all * sev_pred_all
 
-# Sanity checks
-assert (sev_pred_all > 0).all(),  "Negative severity predictions (model error)"
-assert (pure_premium  > 0).all(), "Negative pure premiums (frequency or severity error)"
-assert np.isfinite(pure_premium).all(), "Non-finite pure premiums"
+assert (sev_pred_all > 0).all(),  "Severity model produced non-positive predictions"
+assert (pure_premium  > 0).all(), "Pure premium contains zeros or negatives"
+assert np.isfinite(pure_premium).all(), "Pure premium contains non-finite values"
 
-print(f"Pure premium statistics (test set):")
+print(f"Pure premium — test set (n={len(pure_premium):,}):")
 print(f"  Mean:   £{pure_premium.mean():,.2f}")
 print(f"  Median: £{np.median(pure_premium):,.2f}")
-print(f"  P95:    £{np.percentile(pure_premium, 95):,.2f}")
-print(f"  Min:    £{pure_premium.min():,.2f}")
-print(f"  Max:    £{pure_premium.max():,.2f}")
+print(f"  P10:    £{np.percentile(pure_premium, 10):,.2f}")
+print(f"  P90:    £{np.percentile(pure_premium, 90):,.2f}")
+print(f"  P99:    £{np.percentile(pure_premium, 99):,.2f}")
 
-# Append to frequency predictions table
-pred_full_df = pl.DataFrame({
+# Write to Delta
+pred_df = pl.DataFrame({
     "policy_id":          df_test["policy_id"].tolist(),
     "accident_year":      df_test["accident_year"].tolist(),
     "exposure":           w_test.tolist(),
@@ -273,11 +196,18 @@ pred_full_df = pl.DataFrame({
     "run_date":           [RUN_DATE]    * len(df_test),
 })
 
-spark.createDataFrame(pred_full_df.to_pandas()) \
-    .write.format("delta") \
-    .mode("overwrite") \
-    .option("overwriteSchema", "true") \
+(
+    spark.createDataFrame(pred_df.to_pandas())
+    .write.format("delta")
+    .mode("overwrite")
+    .option("overwriteSchema", "true")
     .saveAsTable(TABLES["freq_predictions"])
+)
 
-print(f"\nFull predictions with pure premium written to {TABLES['freq_predictions']}")
+spark.sql(f"""
+    ALTER TABLE {TABLES['freq_predictions']}
+    SET TBLPROPERTIES ('delta.deletedFileRetentionDuration' = 'interval 365 days')
+""")
+
+print(f"\nPredictions written to {TABLES['freq_predictions']}")
 ```

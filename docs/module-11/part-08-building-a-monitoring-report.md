@@ -1,139 +1,113 @@
 ## Part 8: Building a MonitoringReport
 
-### Assembling the metrics
+### The combined report
 
-We now have four sets of results sitting in variables:
-
-- `psi_score` - PSI on the predicted score distribution
-- `csi_scores` - CSI for each feature
-- `ae_portfolio` - A/E ratio at portfolio level
-- `gini_drift` - Gini change between reference and current
-
-The `MonitoringReport` class takes all of these and produces a structured summary with automated traffic lights. The report is designed to be read by a pricing analyst who has not been staring at the notebook all month.
+`MonitoringReport` is a dataclass that runs all monitoring checks at construction time. Pass your arrays and DataFrames in; it immediately computes A/E, Gini drift, CSI, and — optionally — a Murphy decomposition. There is no `.add_*()` pattern or `.summary()` method; results are available immediately via `results_`, `recommendation`, `to_dict()`, and `to_polars()`.
 
 ```python
 from insurance_monitoring import MonitoringReport
 
 report = MonitoringReport(
-    model_name=MODEL_NAME,
-    reference_date=REFERENCE_DATE,
-    current_date=CURRENT_DATE,
+    reference_actual=actual_ref,
+    reference_predicted=pred_ref,
+    current_actual=actual_cur,
+    current_predicted=pred_cur,
+    exposure=exposure_cur,
+    reference_exposure=exposure_ref,
+    feature_df_reference=df_reference,
+    feature_df_current=df_current,
+    features=FEATURE_NAMES,
+    murphy_distribution="poisson",   # Murphy MCB/DSC decomposition — always available
+    gini_bootstrap=False,            # True = add percentile CIs on Gini (slower)
 )
-
-# Add the PSI result
-report.add_psi(psi_score)
-
-# Add all CSI results
-for feature, result in csi_scores.items():
-    report.add_csi(result)
-
-# Add the A/E result
-report.add_ae(ae_portfolio)
-
-# Add the Gini drift result
-report.add_gini_drift(gini_drift)
 ```
 
-### Generating the summary
+The `feature_df_reference` and `feature_df_current` parameters are Polars DataFrames. The `features` list specifies which columns to include in CSI. If you omit these, CSI is skipped.
+
+### Accessing the results
 
 ```python
-summary = report.summary()
+# The decision recommendation
+print("Recommendation:", report.recommendation)
 
-print("=" * 60)
-print(f"MONITORING REPORT")
-print(f"Model:     {summary['model_name']}")
-print(f"Reference: {summary['reference_date']}")
-print(f"Current:   {summary['current_date']}")
-print(f"Run date:  {summary['run_date']}")
-print("=" * 60)
-print()
+# results_ is a nested dict with keys: ae_ratio, gini, csi, max_csi, (murphy)
+results = report.results_
 
-# Overall traffic light
-overall = summary["overall_traffic_light"]
-print(f"OVERALL STATUS: {overall}")
-print()
+ae = results["ae_ratio"]
+print(f"A/E: {ae['value']:.4f}  (CI: [{ae['lower_ci']:.4f}, {ae['upper_ci']:.4f}])  [{ae['band']}]")
 
-# Individual metrics
-print(f"{'Metric':<35} {'Value':>10}  {'Status'}")
-print("-" * 60)
+gini = results["gini"]
+print(f"Gini: {gini['current']:.4f}  (ref: {gini['reference']:.4f})  [{gini['band']}]")
+print(f"Gini p-value: {gini['p_value']:.4f}")
 
-m = summary["metrics"]
-print(f"{'Score PSI':<35} {m['psi_score']['value']:>10.4f}  {m['psi_score']['traffic_light']}")
-print(f"{'A/E ratio':<35} {m['ae_ratio']['value']:>10.4f}  {m['ae_ratio']['traffic_light']}")
-print(f"{'A/E CI lower':<35} {m['ae_ratio']['ci_lower']:>10.4f}")
-print(f"{'A/E CI upper':<35} {m['ae_ratio']['ci_upper']:>10.4f}")
-print(f"{'Gini (reference)':<35} {m['gini']['gini_ref']:>10.4f}")
-print(f"{'Gini (current)':<35} {m['gini']['gini_cur']:>10.4f}  {m['gini']['traffic_light']}")
-print(f"{'Gini p-value':<35} {m['gini']['p_value']:>10.4f}")
-print()
-
-# CSI summary
-print("FEATURE CSI:")
-print(f"{'Feature':<30} {'CSI':>8}  {'Status'}")
-print("-" * 50)
-for csi_item in sorted(summary["csi"], key=lambda x: x["csi"], reverse=True):
-    print(f"{csi_item['feature']:<30} {csi_item['csi']:>8.4f}  {csi_item['traffic_light']}")
+if "max_csi" in results:
+    mc = results["max_csi"]
+    print(f"Max CSI: {mc['value']:.4f}  (worst feature: {mc['worst_feature']})  [{mc['band']}]")
 ```
 
-### How the overall traffic light is determined
+### The recommendation
 
-The overall traffic light uses the following rules (in order of severity):
+The `recommendation` property implements the three-stage decision tree from arXiv 2510.04556:
 
-1. If any single metric is RED: overall is RED
-2. If two or more metrics are AMBER: overall is AMBER
-3. If one metric is AMBER and the rest are GREEN: overall is AMBER
-4. If all metrics are GREEN: overall is GREEN
+| Signal combination | Recommendation |
+|---|---|
+| All green | `NO_ACTION` |
+| A/E drifted, Gini stable | `RECALIBRATE` |
+| Gini degraded | `REFIT` |
+| Multiple conflicting signals | `INVESTIGATE` |
+| Amber signals, no red | `MONITOR_CLOSELY` |
 
-The thresholds for each metric:
+When `murphy_distribution` is set, the Murphy decomposition sharpens the `RECALIBRATE` vs `REFIT` distinction: if global miscalibration dominates (GMCB > LMCB), recommend `RECALIBRATE` even if the Gini z-test has not crossed amber yet. If discrimination has fallen (DSC low), recommend `REFIT`.
 
-| Metric | Green | Amber | Red |
-|--------|-------|-------|-----|
-| Score PSI | < 0.10 | 0.10 - 0.20 | > 0.20 |
-| A/E ratio | CI contains 1.0 | CI excludes 1.0 but ratio in [0.90, 1.10] | CI excludes 1.0 and ratio outside [0.90, 1.10] |
-| Gini drop | drop < 0.03 AND p > 0.10 | (p 0.05-0.10) OR (p < 0.05 and drop < 0.03) | p < 0.05 and drop >= 0.03 |
-| Any CSI | < 0.10 | 0.10 - 0.20 | > 0.20 |
+### Flat Polars output
 
-The A/E traffic light is based on the confidence interval, not just the point estimate. An A/E of 1.08 with a wide confidence interval (portfolio of 500 policies) is green; an A/E of 1.04 with a narrow confidence interval (portfolio of 50,000 policies) is amber.
+For writing to Delta or MLflow, use `to_polars()`:
 
-### Saving the report as JSON
+```python
+flat = report.to_polars()
+print(flat)
+# shape: (N, 3)
+# ┌──────────────────────┬─────────┬──────────┐
+# │ metric               ┆ value   ┆ band     │
+# │ ---                  ┆ ---     ┆ ---      │
+# │ str                  ┆ f64     ┆ str      │
+# ├──────────────────────┼─────────┼──────────┤
+# │ ae_ratio             ┆ 1.0832  ┆ amber    │
+# │ ae_ratio_lower_ci    ┆ 1.0612  ┆ amber    │
+# │ ae_ratio_upper_ci    ┆ 1.1056  ┆ amber    │
+# │ gini_current         ┆ 0.3801  ┆ amber    │
+# │ gini_reference       ┆ 0.4123  ┆ green    │
+# │ ...                  ┆ ...     ┆ ...      │
+```
 
-The summary dictionary is serialisable. Save it to a file and to Delta (we cover the Delta write in Part 10):
+### Full dict for JSON and Delta
 
 ```python
 import json
 
-report_json = json.dumps(summary, indent=2, default=str)
+report_dict = report.to_dict()
+report_json = json.dumps(report_dict, indent=2, default=str)
 
-# Save to DBFS for now; we persist to Delta in Part 10
 report_path = f"/tmp/monitoring_report_{CURRENT_DATE}.json"
-with open(report_path.replace("/tmp", "/dbfs/tmp"), "w") as f:
+with open(report_path, "w") as f:
     f.write(report_json)
 
 print(f"Report saved to {report_path}")
-print()
-print("Report JSON (truncated):")
-print(report_json[:800])
 ```
 
-### Generating a human-readable HTML report
+`to_dict()` returns a nested dict with keys `results`, `recommendation`, and `murphy_available`. It is designed for JSON serialisation and for logging to MLflow as run metrics.
 
-The `MonitoringReport` class can also produce an HTML summary suitable for attaching to an email or pasting into a Confluence page. This is not a polished dashboard - it is a functional one-page status report:
+### How the traffic lights work
 
-```python
-html = report.to_html()
+The `results_` dict uses `band` keys throughout: `green`, `amber`, or `red`. Thresholds come from `MonitoringThresholds` (configurable, defaults to industry-standard settings):
 
-# Save to DBFS
-html_path = f"/dbfs/tmp/monitoring_report_{CURRENT_DATE}.html"
-with open(html_path, "w") as f:
-    f.write(html)
+| Metric | Green | Amber | Red |
+|--------|-------|-------|-----|
+| A/E (CI-based) | CI contains 1.0 | CI excludes 1.0 | CI excludes 1.0 and outside [0.90, 1.10] |
+| Gini drift | p > alpha | (amber) | p < alpha |
+| CSI (per feature) | < 0.10 | 0.10–0.25 | > 0.25 |
+| PSI (score) | < 0.10 | 0.10–0.25 | > 0.25 |
 
-print(f"HTML report saved to {html_path}")
-
-# Display in notebook
-from IPython.display import HTML, display
-display(HTML(html))
-```
-
-The HTML report has coloured cells for each metric (green, amber, red backgrounds), the full CSI table, and a timestamp. It is designed to be self-contained - no external CSS or JavaScript dependencies - so it renders identically whether you open it in a browser, paste it into a ticket, or attach it to an email.
+The A/E band is based on the confidence interval, not just the point estimate. An A/E of 1.08 with a wide CI (portfolio of 500 policies) is green; an A/E of 1.04 with a narrow CI (portfolio of 50,000 policies) is amber. This is the correct behaviour.
 
 Part 9 walks through how to read and act on the report. Part 10 shows how to write the results to Delta for trend analysis.

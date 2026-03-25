@@ -1,78 +1,68 @@
-## Part 4: Generating the synthetic datasets
+## Part 4: Generating the synthetic dataset
 
-We use the built-in data generators from both libraries. The generators produce datasets with known true elasticities, which means we can verify our estimates against the ground truth.
+### The data-generating process
 
-Add a markdown cell:
+We work with a synthetic UK motor renewal dataset where the true elasticity is known. This lets us verify that the estimator recovers the right answer before applying it to real data where we cannot check.
+
+The data generator (`make_renewal_data`) creates a portfolio where:
+
+- Quoted prices are a near-deterministic function of risk factors, plus a small exogenous shock required for identification
+- True elasticity varies by NCD band: NCD=0 customers are most elastic (−3.5), NCD=5 least elastic (−1.0)
+- True elasticity varies by age: 17–24 most elastic (−3.0), 65+ least elastic (−1.2)
+- PCW customers are 30% more elastic than direct or broker customers at the same NCD/age combination
+- Renewal probability follows a logistic model with the true heterogeneous elasticity
+
+The `price_variation_sd` parameter controls the standard deviation of the exogenous price shock around the re-rated technical change. At 0.08 (the default), DML has enough residual treatment variation. At 0.01 (simulated via `near_deterministic=True`), it does not — we demonstrate this in Part 5.
+
+### Generating the dataset
 
 ```python
 %md
-## Part 4: Generating the datasets
+## Part 4: Synthetic renewal dataset
 ```
-
-Then in a new code cell:
 
 ```python
-# New business quotes: 150,000 records with true elasticity = -2.0
-df_quotes = generate_conversion_data(n_quotes=150_000, seed=42)
+df = make_renewal_data(n=50_000, seed=42, price_variation_sd=0.08)
 
-print("=== Conversion dataset ===")
-print(f"Shape:            {df_quotes.shape}")
-print(f"Conversion rate:  {df_quotes['converted'].mean():.3f}")
-print(f"True elasticity:  {df_quotes['true_elasticity'].mean():.3f}")
-print(f"Channels:         {df_quotes['channel'].unique().sort().to_list()}")
+print(f"Shape:                 {df.shape}")
+print(f"Renewal rate:          {df['renewed'].mean():.3f}")
+print(f"Mean log price change: {df['log_price_change'].mean():.4f}")
+print(f"Std log price change:  {df['log_price_change'].std():.4f}")
 print()
-print("Price ratio stats:")
-print(df_quotes.select(["price_ratio", "log_price_ratio"]).describe())
+print(df.select(["age", "ncd_years", "channel", "last_premium", "enbp",
+                 "log_price_change", "renewed", "true_elasticity"]).head(5))
 ```
 
-You should see something like:
+Expected output: renewal rate around 0.82–0.85, mean log price change around 0.05 (roughly 5% average price increase), standard deviation around 0.08.
 
-```bash
-=== Conversion dataset ===
-Shape:            (150000, 17)
-Conversion rate:  0.118
-True elasticity:  -2.001
-Channels:         ['direct', 'pcw_confused', 'pcw_ctm', 'pcw_go', 'pcw_msm']
-```
+### Understanding the key columns
 
-The conversion rate of about 12% is realistic for a UK PCW motor insurer. On a PCW, most people compare 10-20 quotes and only one company wins each customer. A 12% conversion rate means you win roughly one in eight of the quotes you provide.
+| Column | Description |
+|--------|-------------|
+| `log_price_change` | log(offer_price / last_premium) — the treatment variable D |
+| `renewed` | Binary renewal indicator — the outcome Y |
+| `tech_prem` | Technical premium — the cost floor for the optimiser |
+| `enbp` | Equivalent new business price — the FCA PS21/5 ceiling |
+| `true_elasticity` | Ground truth per-customer CATE for validation (not available on real data) |
 
-Now generate the renewal dataset:
+### Inspecting the ground-truth heterogeneity
+
+The true elasticities are in the dataset. Before fitting any model, understand what we are trying to recover:
 
 ```python
-# Renewals: 50,000 records with heterogeneous true elasticity
-df_renewals = make_renewal_data(n=50_000, seed=42)
-
-print("=== Renewal dataset ===")
-print(f"Shape:          {df_renewals.shape}")
-print(f"Renewal rate:   {df_renewals['renewed'].mean():.3f}")
-print(f"True ATE:       {df_renewals['true_elasticity'].mean():.3f}")
-print()
-print("Log price change distribution:")
-print(df_renewals.select("log_price_change").describe())
+# True average elasticity by NCD band
+true_ncd = true_gate_by_ncd(df)
+print("True elasticity by NCD band (DGP):")
+print(true_ncd)
 ```
-
-The renewal rate should be around 72-75% and the true ATE around -2.0. The `log_price_change` column is the treatment variable: `log(offer_price / last_year_price)`. A value of 0.05 means a roughly 5% price increase.
-
-In the next cell, look at the column names to understand the schema before building any models:
 
 ```python
-print("Conversion columns:", df_quotes.columns)
-print()
-print("Renewal columns:", df_renewals.columns)
+# True average elasticity by age band
+true_age = true_gate_by_age(df)
+print("\nTrue elasticity by age band (DGP):")
+print(true_age)
 ```
 
-Key columns in the conversion dataset:
-- `quoted_price`: the price we offered
-- `technical_premium`: the risk model's output at quote time
-- `log_price_ratio`: log(quoted_price / technical_premium) - this is the treatment variable for conversion elasticity
-- `converted`: 1 if the customer bought, 0 if not
-- `rank_position`: 1 if we were cheapest on the PCW, 2 if second cheapest, etc.
-- `true_elasticity`: the ground truth (only in synthetic data; you will never have this in production)
+The NCD gradient runs from around −3.5 for NCD=0 to around −1.0 for NCD=5. The age gradient runs from around −3.0 for 17–24 to around −1.2 for 65+. These are the benchmarks we check our estimates against in Parts 7 and 8.
 
-Key columns in the renewal dataset:
-- `log_price_change`: log(offer_price / last_year_price) - the treatment variable for renewal elasticity
-- `renewed`: 1 if the customer renewed, 0 if they lapsed
-- `tech_prem`: technical (cost-equivalent) premium
-- `enbp`: equivalent new business price (the PS21/5 ceiling)
-- `true_elasticity`: the ground truth, which varies by NCD and age band
+On real data you will not have `true_elasticity`. Fitting on synthetic data and comparing to ground truth is how you validate the methodology before trusting it on production data.

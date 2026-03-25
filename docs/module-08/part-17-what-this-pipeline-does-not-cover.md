@@ -1,41 +1,50 @@
 ## Part 17: What this pipeline does not cover
 
-This section documents the known limitations of the pipeline as built. Understanding what the pipeline does not do is as important as understanding what it does.
+Every pipeline has boundaries. Here are the known gaps in what we have built and what fills them.
 
-### Geographic credibility
+### Production monitoring
 
-The pipeline treats `region` as a flat five-category factor. UK motor pricing in practice uses postcode district-level rating with 2,300+ distinct districts. A flat five-category region factor misses most of the genuine geographic variation.
+The pipeline validates the model on historical held-out data before deployment. It does not include the monitoring framework that detects when the model drifts from actual outcomes in production.
 
-Geographic credibility -- blending thin-cell postcode experience with the portfolio mean using a Bühlmann-Straub or Bayesian hierarchical model -- is covered in Module 6. The correct architecture is to replace the flat `region` factor with Module 6's blended district-level relativities, then feed those relativities into the SHAP factor structure.
+A deployed frequency model should have monthly actual-versus-expected monitoring: actual claim counts by prediction decile versus the model's predictions. When the A/E ratio in the top decile moves from 1.02 to 1.18, the model is underpricing high-risk policies. This is a distinct problem from the initial calibration check in Stage 8.5 — calibration testing is a pre-deployment gate; A/E monitoring is a post-deployment signal.
 
-Geographic credibility is also the most regulatory-sensitive element of UK motor pricing. The FCA's Consumer Duty and its ongoing work on proxy discrimination means that any postcode-level rating factor needs documented actuarial justification. The risk is not just that a postcode is used as a proxy for a protected characteristic -- the risk is that a spatial smoothing method that looks neutral mathematically may still propagate discrimination at the group level. Before deploying any geographic component in production, document: the smoothing method chosen, why it was preferred over alternatives, how it was validated against FCA proxy discrimination guidance, and how it performs for protected characteristic groups.
+`insurance_monitoring` provides the tools for production monitoring. The `ae_ratio` function computes the A/E ratio with Poisson confidence intervals. `GiniDriftBootstrapTest` detects when the model's discrimination (rank ordering) has deteriorated. `PITMonitor` provides anytime-valid calibration change detection with formal type I error control. Module 11 covers how to connect these to the pipeline output.
 
-### Multi-peril combination
+### Multi-peril modelling
 
-The pipeline models motor claims as a single severity distribution. UK private motor actually combines at least three distinct perils: own damage, third-party property damage, and third-party personal injury. Each has different frequency, severity, development characteristics, and regulatory treatment.
+The pipeline models motor claims as a single peril. UK private motor combines at least three: own damage (OD), third-party property damage (TPPD), and third-party personal injury (TPPI). Each peril has different frequency, severity, development characteristics, and regulatory treatment.
 
-A production pipeline would fit separate frequency and severity models for each peril, calibrate separate conformal intervals, and combine them for the technical premium. The current pipeline's single-severity model will produce a reasonable overall pure premium but cannot differentiate between a book skewed towards large BI claims and one skewed towards frequent small OD claims.
+A single severity model averages across these distributions. A portfolio with an unusual BI severity year will look like ordinary OD volatility in the aggregate model. The rating signal is diluted and the pricing committee cannot distinguish between the perils.
 
-### Live demand elasticity
+Production pipelines for UK motor should fit separate frequency and severity models per peril, calibrate separate conformal intervals, and combine them for the technical premium. The pipeline architecture in this module supports this: run Stage 6 three times, once per peril, with different target columns. The rest of the pipeline is unchanged.
 
-The rate optimiser in Stage 9 uses a logistic demand model with fixed parameters (intercept=1.0, price_coef=-2.0). In production, the demand parameters should be estimated from your own book's renewal lapse experience, ideally re-estimated quarterly. A demand model with incorrect elasticity produces suboptimal rate actions: if you overestimate price sensitivity, the optimiser will be overly conservative with rate increases and you will under-recover on loss ratio.
+### Postcode-level geography
 
-### Monitoring and drift detection
+Stage 3 uses a six-category flat region factor. UK motor pricing in practice operates at postcode district level (2,300+ districts). A flat region factor misses most of the genuine geographic variation in claim frequency and severity.
 
-The pipeline produces a model and validates it on historical data. It does not include a monitoring framework for detecting when that model's predictions drift from actual outcomes in production. Production model monitoring -- actual-versus-expected tracking, SHAP drift monitoring, coverage recalibration triggers -- is a separate pipeline that should run monthly against the production scoring engine.
+Postcode district-level rating requires Bühlmann-Straub or Bayesian hierarchical blending to handle thin cells — a district with 15 policies cannot support a credible relativity estimate without borrowing from neighbours. Module 12 covers spatial territory factor estimation.
 
-### Claims development loading
+One important note for production: postcode district is a proxy discrimination risk under the FCA's Consumer Duty. Any territory factor must be documented with actuarial justification, and its performance across protected characteristic groups (ethnicity, disability) must be assessed before deployment.
 
-The severity model trains on incurred-to-date values. For accident years that have not fully developed, the incurred values understate ultimate severity. The pipeline does not apply a development loading to the training severities before fitting the model. For motor property damage with a six-month IBNR buffer, this is acceptable -- most OD claims are settled within three months. For motor BI or commercial lines, a chain-ladder development factor should be applied to each accident year's severity before training.
+### Demand model calibration
+
+The demand model in Stage 9 uses fixed parameters (intercept 1.2, price coefficient -2.0). These are not estimated from data; they are assumptions. If actual renewal elasticity in your book is -0.8 (much less price-sensitive), the optimiser will be overly conservative about rate increases and you will under-recover on loss ratio. If actual elasticity is -3.5 (much more price-sensitive), the optimiser will be too aggressive and you will lose more volume than projected.
+
+Module 9 covers causal demand estimation from observational renewal data using double machine learning. The estimated elasticity should be re-estimated at least annually and inserted into Stage 9's PortfolioOptimiser call.
 
 ### Expense loading
 
-The technical premium from the pipeline is the expected loss cost only. It does not include acquisition costs, operating expenses, investment income offset, or reinsurance cost. A commercially deployed technical premium adds a loading to the model output for these items. The loading is typically applied at the product/channel level rather than at the individual policy level.
+The pipeline's technical premium is the expected loss cost only. It does not include:
 
-### Reinstatement and policy limits
+- Acquisition costs (PCW fees, broker commissions)
+- Operating expenses (claims handling, policy administration)
+- Investment income offset
+- Reinsurance costs
 
-The severity model predicts mean claim cost without applying per-claim excess structures or policy limits. For policies with material excess or sub-limits, the model's severity prediction is the ground-up cost. The treaty or XL reinsurance attachment point, and any policy excess, need to be applied separately to convert the model's ground-up prediction to a net-of-reinsurance technical premium.
+Commercial premiums add loadings for these items. For a portfolio with a PCW acquisition cost of £35 per policy and an operating expense ratio of 12%, the loaded premium is `pure_premium / (1 - 0.12) + 35`. These loadings are applied outside the model, typically at the product or channel level. The pipeline produces the loss cost component only; the actuarial team adds the loadings in the rating engine.
 
-### Reinsurance structure
+### Claims development loading
 
-Related to the above: the rate optimiser optimises on gross of reinsurance. For a book with material reinsurance, the optimiser should work on a net-of-reinsurance basis where the treaty cost is reflected in the technical premium. This requires a reinsurance cost model that is not included here.
+The severity model trains on incurred-to-date values. For lines with slow-developing claims (BI, employers' liability), incurred values in recent accident years understate ultimate. The pipeline does not apply development factors before training.
+
+For motor OD with a 6-month IBNR buffer, this is acceptable — claims develop quickly. For motor BI or commercial lines, apply accident year development factors (chain-ladder or Bornhuetter-Ferguson) to each accident year's incurred values before feeding them to Stage 6. The development factors are standard actuarial outputs; they just need to be applied in Stage 2 before the features table is written.

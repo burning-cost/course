@@ -1,6 +1,8 @@
-## Part 11: Building the demand curve
+## Part 11: The portfolio demand curve
 
-The demand curve translates the elasticity model into a concrete view of the volume-profit trade-off across a range of price changes. It is a management information tool, not a per-customer optimiser.
+The per-customer CATEs are the right tool for individual-policy optimisation. Before going there, build the portfolio demand curve — a sweep of price changes and their expected aggregate outcomes. This is the management information view: the chart that goes to the commercial director.
+
+### Computing the demand curve
 
 ```python
 %md
@@ -8,46 +10,37 @@ The demand curve translates the elasticity model into a concrete view of the vol
 ```
 
 ```python
-from insurance_causal.elasticity.demand import demand_curve, plot_demand_curve
-
-# Sweep price changes from -25% to +25%
+# Sweep price changes from -25% to +25% in 50 steps
 demand_df = demand_curve(
-    est_renewal,
-    df_renewals,
+    est,
+    df,
     price_range=(-0.25, 0.25, 50),
 )
 
-print("Demand curve (selected rows):")
-print(demand_df.select([
-    "pct_price_change",
-    "predicted_renewal_rate",
-    "predicted_profit",
-]).filter(
-    pl.col("pct_price_change").is_between(-0.15, 0.15)
-).with_columns(
-    (pl.col("pct_price_change") * 100).round(1).alias("pct_change_%"),
-    (pl.col("predicted_renewal_rate") * 100).round(2).alias("renewal_rate_%"),
-    pl.col("predicted_profit").round(2),
-).select(["pct_change_%", "renewal_rate_%", "predicted_profit"])
+print("Demand curve (selected price points):")
+print(
+    demand_df
+    .filter(pl.col("pct_price_change").is_between(-0.15, 0.15))
+    .with_columns([
+        (pl.col("pct_price_change") * 100).round(1).alias("price_change_%"),
+        (pl.col("predicted_renewal_rate") * 100).round(2).alias("renewal_rate_%"),
+        pl.col("predicted_profit").round(2),
+    ])
+    .select(["price_change_%", "renewal_rate_%", "predicted_profit"])
 )
 ```
 
-You should see that:
-- At -25% price change: very high renewal rate, low profit per policy
-- At 0% price change: current market rates
-- At +25% price change: renewal rate has fallen, but higher margin on those who stay
-
-The profit-maximising price change is where expected profit per policy is maximised - not necessarily at 0% change. The demand curve makes this visible.
+### Finding the portfolio-level optimum
 
 ```python
-# Find the profit-maximising price change
 max_profit_row = demand_df.sort("predicted_profit", descending=True).row(0, named=True)
-print(f"\nProfit-maximising price change: {max_profit_row['pct_price_change']*100:.1f}%")
-print(f"Expected renewal rate at that point: {max_profit_row['predicted_renewal_rate']*100:.1f}%")
-print(f"Expected profit per policy: £{max_profit_row['predicted_profit']:.2f}")
+
+print(f"Profit-maximising price change: {max_profit_row['pct_price_change'] * 100:.1f}%")
+print(f"Renewal rate at optimum:        {max_profit_row['predicted_renewal_rate'] * 100:.1f}%")
+print(f"Expected profit per policy:     £{max_profit_row['predicted_profit']:.2f}")
 ```
 
-Now plot it:
+### Plotting the demand curve
 
 ```python
 fig_demand = plot_demand_curve(demand_df, show_profit=True)
@@ -55,6 +48,16 @@ fig_demand.savefig("/tmp/demand_curve.png", dpi=150, bbox_inches="tight")
 plt.show()
 ```
 
-The dual-axis plot shows the renewal rate (left axis, blue) falling as price increases, and the expected profit per policy (right axis, red) showing a hump shape - rising at first as the higher margin more than offsets the volume loss, then falling as too many customers lapse. The red dot marks the profit peak.
+The dual-axis chart shows:
 
-This chart is what you show the commercial director. It translates the technical DML output into a concrete business decision: "the data suggests that a portfolio-wide price increase of X% would maximise expected profit, at the cost of Y% lower renewal rate."
+- **Left axis (blue)**: renewal rate falling as price change increases — the demand curve itself
+- **Right axis (red)**: expected profit per policy — a hump shape. Rising at first (higher margin more than offsets volume loss), then falling (too many lapses)
+- **Red dot**: the profit-maximising price change
+
+This is the commercial director's chart. It frames the decision: "the data says an X% price increase maximises expected profit, at the cost of Y% lower renewal rate. If we accept a lower renewal rate target, we can take more rate."
+
+### Why the portfolio optimum is not what you implement
+
+The portfolio demand curve uses the average CATE. It tells you what happens if you apply the same price change to everyone. It does not account for the fact that an NCD-0 PCW customer has 3× the price sensitivity of an NCD-5 direct customer, or that some customers are already at the ENBP ceiling and cannot be priced higher.
+
+The per-policy optimiser in Part 12 uses the individual-level CATEs and the per-policy ENBP constraint to find the best price for each customer separately. The portfolio demand curve is a benchmark and an MI tool. The per-policy optimiser is the operational output.

@@ -54,9 +54,9 @@ def compute_recalibration_factor(
 
     Multiply model predictions by this factor to restore portfolio-level calibration.
     """
-    ae_result = ae_calc.calculate(actual=actual, expected=expected, exposure=exposure)
-    factor = 1.0 / ae_result.ratio
-    print(f"A/E ratio:           {ae_result.ratio:.4f}")
+    ae_result = ae_ratio_ci(actual=actual, predicted=expected, method="poisson")
+    factor = 1.0 / ae_result["ae"]
+    print(f"A/E ratio:           {ae_result["ae"]:.4f}")
     print(f"Recalibration factor: {factor:.4f}")
     print(f"Interpretation: multiply all predictions by {factor:.4f}")
     return factor
@@ -82,7 +82,7 @@ recal_record = {
     "model_version":       MODEL_VERSION,
     "effective_from":      CURRENT_DATE,
     "recalibration_factor": float(recal_factor),
-    "ae_ratio_at_trigger": float(ae_portfolio.ratio),
+    "ae_ratio_at_trigger": float(ae_result["ae"]),
     "applied_by":          "automated_monitoring",
     "monitoring_run_date": RUN_DATE,
     "reason":              "A/E ratio outside [0.95, 1.05] for two consecutive months",
@@ -124,11 +124,11 @@ def recalibration_recommendation(
     Determine the monitoring recommendation based on current metrics
     and recent history.
     """
-    ae_ci_excludes_1 = (ae_result.ci_lower > 1.0) or (ae_result.ci_upper < 1.0)
-    ae_outside_10pct = (ae_result.ratio < 0.90) or (ae_result.ratio > 1.10)
-    ae_outside_15pct = (ae_result.ratio < 0.85) or (ae_result.ratio > 1.15)
+    ae_ci_excludes_1 = (ae_result["lower"] > 1.0) or (ae_result["upper"] < 1.0)
+    ae_outside_10pct = (ae_result["ae"] < 0.90) or (ae_result["ae"] > 1.10)
+    ae_outside_15pct = (ae_result["ae"] < 0.85) or (ae_result["ae"] > 1.15)
     gini_significant = (gini_result.p_value < 0.05) and (
-        abs(gini_result.gini_cur - gini_result.gini_ref) >= 0.03
+        abs(gini_result.current_gini - gini_result.reference_gini) >= 0.03
     )
 
     # Check how many consecutive months the CI has excluded 1.0

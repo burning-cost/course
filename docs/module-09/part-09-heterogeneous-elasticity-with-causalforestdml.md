@@ -1,103 +1,81 @@
-## Part 9: Heterogeneous elasticity with CausalForestDML
+## Part 9: Per-customer elasticity estimates
 
-The global ATE tells you the portfolio-average elasticity. But the actual commercial question is more granular: are PCW customers more elastic than direct customers? Are young drivers more elastic than older drivers? Does elasticity vary by NCD band?
+Beyond segment averages, `CausalForestDML` produces a per-customer CATE estimate: the expected change in that individual's renewal probability for a unit change in log price. This is the input to the per-policy optimisation in Part 12.
 
-The answer matters for pricing decisions. If NCD-0 customers (typically young, first year of driving) are much more elastic than NCD-5 customers, you should price the two groups differently. A uniform price increase hits the elastic group hard and barely affects the inelastic group.
-
-For this analysis we switch to the `insurance_causal.elasticity` submodule's `RenewalElasticityEstimator`, which wraps `econml`'s `CausalForestDML` to estimate per-customer heterogeneous treatment effects (CATE).
-
-**Time note:** The CausalForestDML fit below takes 5--8 minutes on Databricks Free Edition. After submitting the cell, read the GATE interpretation section (Part 10) while the model trains -- the content is directly relevant to reading the output.
-
-### Fitting the CausalForestDML model
+### Extracting CATEs
 
 ```python
 %md
-## Part 9: Heterogeneous elasticity (CausalForestDML)
+## Part 9: Per-customer CATE estimates
 ```
 
 ```python
-confounders = ["age", "ncd_years", "vehicle_group", "region", "channel"]
+cate_values = est.cate(df)
 
-est_renewal = RenewalElasticityEstimator(
-    cate_model="causal_forest",
-    n_estimators=200,
-    catboost_iterations=500,
-    n_folds=5,
-)
-
-print("Fitting CausalForestDML... (5-8 minutes on Databricks Free Edition)")
-est_renewal.fit(
-    df_renewals,
-    outcome="renewed",
-    treatment="log_price_change",
-    confounders=confounders,
-)
-
-ate, lb, ub = est_renewal.ate()
-print(f"\nATE:    {ate:.3f}")
-print(f"95% CI: [{lb:.3f}, {ub:.3f}]")
-print(f"True ATE: {df_renewals['true_elasticity'].mean():.3f}")
+print("CATE distribution across 50,000 customers:")
+print(f"  Mean:  {cate_values.mean():.3f}  (should be close to ATE: {ate:.3f})")
+print(f"  Std:   {cate_values.std():.3f}")
+print(f"  Min:   {cate_values.min():.3f}")
+print(f"  Max:   {cate_values.max():.3f}")
+print(f"  10th:  {np.percentile(cate_values, 10):.3f}")
+print(f"  90th:  {np.percentile(cate_values, 90):.3f}")
 ```
 
-The CausalForestDML is more computationally intensive than the PLR approach. On 50,000 records it takes 5-8 minutes. The ATE should be close to -2.0.
+The spread of CATEs across customers reflects the genuine heterogeneity in price sensitivity. A standard deviation of 0.8–1.2 on the CATE distribution means the most elastic customers are roughly 3–5× more sensitive to price than the least elastic.
 
-### Per-customer CATE estimates
+### Per-customer confidence intervals
 
 ```python
-# Per-customer estimated elasticity
-cate_values = est_renewal.cate(df_renewals)
+lb_vals, ub_vals = est.cate_interval(df, alpha=0.05)
 
-print("CATE distribution:")
-print(f"  Mean:    {cate_values.mean():.3f}")
-print(f"  Std:     {cate_values.std():.3f}")
-print(f"  Min:     {cate_values.min():.3f}")
-print(f"  Max:     {cate_values.max():.3f}")
+# Add to DataFrame for analysis
+df_with_cate = df.with_columns([
+    pl.Series("cate", cate_values),
+    pl.Series("cate_lower", lb_vals),
+    pl.Series("cate_upper", ub_vals),
+])
+
+# What fraction of customers have a CATE CI that excludes zero?
+n_significant = int(((df_with_cate["cate_upper"] < 0)).sum())
+print(f"Customers with significantly negative elasticity: {n_significant:,} "
+      f"({100 * n_significant / len(df):.1f}%)")
 ```
 
-The CATE values represent individual-level heterogeneity. A customer with CATE of -3.5 is highly elastic: even a modest price increase causes a large drop in their renewal probability. A customer with CATE of -0.8 is inelastic: price increases have little effect.
+A customer with a CATE CI that does not include zero has a statistically distinguishable elasticity from zero. For pricing decisions, you may want to treat customers with wide, zero-straddling CIs conservatively — using the ATE rather than the per-customer estimate.
 
-In the synthetic data, the true elasticity varies by NCD band and age band. A young driver with no NCD (NCD=0) has a true elasticity of about -3.5; an older driver with 5 years NCD has a true elasticity of about -1.0. The CausalForestDML should recover this pattern.
+### Validating the CATE recovery
 
-### Group average treatment effects (GATE) by segment
+In synthetic data we can compare each customer's CATE estimate against their true elasticity:
 
 ```python
-# GATE by NCD years
-gate_ncd = est_renewal.gate(df_renewals, by="ncd_years")
-print("GATE by NCD years:")
-print(gate_ncd)
+cate_bias = cate_values - df["true_elasticity"].to_numpy()
+
+print("CATE recovery validation:")
+print(f"  Mean bias:    {cate_bias.mean():.4f}  (should be near zero)")
+print(f"  RMSE:         {np.sqrt(np.mean(cate_bias**2)):.4f}")
+print(f"  Correlation (estimated vs. true): "
+      f"{np.corrcoef(cate_values, df['true_elasticity'].to_numpy())[0,1]:.4f}")
 ```
 
-The GATE table shows the average elasticity within each NCD group with confidence intervals. You should see a clear pattern: NCD=0 customers are much more elastic (larger negative value) than NCD=5 customers. This is the heterogeneity the CausalForestDML is designed to capture.
+A correlation above 0.7 between estimated and true CATEs indicates the forest is picking up meaningful individual-level heterogeneity, not just noise. On 50,000 observations, expect correlation around 0.75–0.85.
+
+### Distribution of CATEs by segment
 
 ```python
-# GATE by channel
-gate_channel = est_renewal.gate(df_renewals, by="channel")
-print("\nGATE by channel:")
-print(gate_channel)
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+for ax, col in zip(axes, ["ncd_years", "channel", "age_band"]):
+    for group, group_df in df_with_cate.group_by(col):
+        label = str(group[0]) if isinstance(group, tuple) else str(group)
+        ax.hist(group_df["cate"].to_numpy(), bins=40, alpha=0.5, label=label, density=True)
+    ax.set_xlabel("CATE (semi-elasticity)")
+    ax.set_title(f"CATE distribution by {col}")
+    ax.legend(fontsize=7)
+    ax.axvline(ate, color="black", linestyle="--", linewidth=1, label="ATE")
+
+plt.tight_layout()
+plt.savefig("/tmp/cate_distributions.png", dpi=150, bbox_inches="tight")
+plt.show()
 ```
 
-PCW customers should be more elastic than direct or broker customers. PCW customers are active price shoppers; direct customers have self-selected out of the comparison market.
-
-```python
-# GATE by age band
-gate_age = est_renewal.gate(df_renewals, by="age_band")
-print("\nGATE by age band:")
-print(gate_age)
-```
-
-The pattern here is: younger customers (17-24) are most elastic, older customers (65+) are least elastic. This matches the known DGP in the synthetic data.
-
-Compare the recovered GATEs to the true values from the DGP:
-
-```python
-# True elasticities by NCD (from the data generator documentation)
-true_by_ncd = {0: -3.5, 1: -3.0, 2: -2.5, 3: -2.0, 4: -1.5, 5: -1.0}
-
-print("\nValidation: recovered vs true elasticity by NCD")
-print(f"{'NCD':>6} {'True':>8} {'Recovered':>12} {'Lower':>8} {'Upper':>8}")
-for row in gate_ncd.iter_rows(named=True):
-    ncd = row["ncd_years"]
-    print(f"{ncd:>6} {true_by_ncd.get(ncd, 'N/A'):>8} {row['elasticity']:>12.3f} {row['ci_lower']:>8.3f} {row['ci_upper']:>8.3f}")
-```
-
-On 50,000 observations with sufficient price variation, the recovered GATEs should be within the 95% confidence intervals of the true values for all NCD groups.
+Each subplot should show clearly separated distributions by group. NCD=0 CATEs should sit well to the left of NCD=5. PCW CATEs should sit left of direct. Young driver CATEs should sit left of 65+. If the distributions overlap completely, the estimator has not recovered meaningful heterogeneity — check that the confounders list is correctly specified and that price variation is sufficient.

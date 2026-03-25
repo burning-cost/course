@@ -4,9 +4,9 @@
 # MAGIC
 # MAGIC **Modern Insurance Pricing with Python and Databricks**
 # MAGIC
-# MAGIC A trained model is not a finished product. It is an assumption that the world it was trained on
-# MAGIC still resembles the world it is scoring. This notebook shows you how to test that assumption
-# MAGIC systematically, using the `insurance-monitoring` library.
+# MAGIC A trained model is not a finished product. It is an assumption that the world it was
+# MAGIC trained on still resembles the world it is scoring. This notebook shows you how to test
+# MAGIC that assumption systematically, using the `insurance-monitoring` library.
 # MAGIC
 # MAGIC **What this notebook does:**
 # MAGIC 1. Generates synthetic UK motor policy data with reference and current periods
@@ -15,7 +15,7 @@
 # MAGIC 4. Computes Population Stability Index (PSI) on predicted scores
 # MAGIC 5. Computes Characteristic Stability Index (CSI) on all model features
 # MAGIC 6. Computes Actual vs Expected ratios with Poisson confidence intervals
-# MAGIC 7. Runs a Gini drift z-test (DeLong method)
+# MAGIC 7. Runs a Gini drift test
 # MAGIC 8. Assembles a MonitoringReport with automated traffic-light signals
 # MAGIC 9. Interprets the combined signals
 # MAGIC 10. Writes all monitoring results to Unity Catalog Delta tables
@@ -26,13 +26,14 @@
 # MAGIC In a real deployment, replace the data generation cell with
 # MAGIC `spark.table("your_catalog.motor.policies")`.
 # MAGIC
-# MAGIC **Key concept:** PSI and CSI tell you what has changed. A/E and Gini tell you whether it matters
-# MAGIC for pricing accuracy. Run them together. Act on the combination, not any single metric in isolation.
+# MAGIC **Key concept:** PSI and CSI tell you what has changed. A/E and Gini tell you whether
+# MAGIC it matters for pricing accuracy. Run them together. Act on the combination, not any
+# MAGIC single metric in isolation.
 
 # COMMAND ----------
 
 %pip install insurance-monitoring catboost polars mlflow scikit-learn --quiet
-# Use %pip in Databricks notebooks. Outside Databricks, use: uv add insurance-monitoring catboost polars mlflow scikit-learn
+# Use %pip in Databricks notebooks. Outside Databricks: uv add insurance-monitoring catboost polars mlflow scikit-learn
 
 # COMMAND ----------
 
@@ -50,21 +51,18 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import mlflow
 from catboost import CatBoostClassifier, Pool
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, roc_curve
 
-from insurance_monitoring import (
-    PSICalculator,
-    CSICalculator,
-    AERatio,
-    GiniDrift,
-    MonitoringReport,
-)
+from insurance_monitoring import MonitoringReport
+from insurance_monitoring.drift import psi, csi
+from insurance_monitoring.calibration import ae_ratio, ae_ratio_ci
+from insurance_monitoring.discrimination import gini_coefficient, gini_drift_test
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
 print(f"Today: {date.today()}")
 print(f"Polars:              {pl.__version__}")
-print("insurance-monitoring: imported OK")
+print("insurance-monitoring:", __import__("insurance_monitoring").__version__)
 print("All imports OK")
 
 # COMMAND ----------
@@ -95,15 +93,13 @@ TABLES = {
 # -----------------------------------------------------------------------
 # Monitoring parameters
 # -----------------------------------------------------------------------
-# REFERENCE_DATE: when the model was trained / last validated
-# CURRENT_DATE:   end of the monitoring window we are assessing
 REFERENCE_DATE = "2023-12-31"
 CURRENT_DATE   = "2024-06-30"
 
 MODEL_NAME    = "motor_frequency_catboost"
 MODEL_VERSION = "1"
 
-N_BINS = 10  # PSI/CSI bin count. 10 is the standard; reduce to 5 for sparse features
+N_BINS = 10  # PSI/CSI bin count. 10 is standard; reduce to 5 for sparse features
 
 RUN_DATE = str(date.today())
 
@@ -131,8 +127,8 @@ print(f"Model:             {MODEL_NAME} v{MODEL_VERSION}")
 
 rng = np.random.default_rng(seed=42)
 
-N_REF = 60_000   # reference period: model training data
-N_CUR = 20_000   # current monitoring period
+N_REF = 60_000
+N_CUR = 20_000
 
 FEATURE_NAMES = [
     "driver_age", "vehicle_age", "vehicle_group",
@@ -142,28 +138,15 @@ CAT_FEATURES = ["region"]
 
 
 def generate_motor_data(n, period, rng, drift=False):
-    """
-    Generate synthetic UK motor policy data.
-
-    Parameters
-    ----------
-    n       : number of policies
-    period  : label string, stored in the output
-    rng     : numpy random generator (for reproducibility)
-    drift   : if True, inject distribution shifts into the current period
-    """
-    # --- Feature distributions ---
     if drift:
-        # Young driver proportion shifted up: more under-25s in current data
         driver_age = np.where(
             rng.random(n) < 0.25,
-            rng.integers(17, 25, n),       # 25% young drivers (was ~15%)
+            rng.integers(17, 25, n),
             rng.integers(25, 80, n),
         )
-        # Higher mileage: 20% shift in annual mileage distribution
         annual_mileage = rng.gamma(shape=4.5, scale=3200, size=n).astype(int).clip(2000, 50000)
     else:
-        driver_age     = np.where(
+        driver_age = np.where(
             rng.random(n) < 0.15,
             rng.integers(17, 25, n),
             rng.integers(25, 80, n),
@@ -171,16 +154,15 @@ def generate_motor_data(n, period, rng, drift=False):
         annual_mileage = rng.gamma(shape=4.0, scale=3000, size=n).astype(int).clip(2000, 50000)
 
     vehicle_age   = rng.integers(0, 20, n)
-    vehicle_group = rng.integers(1, 51, n)    # 1-50 ABI group
+    vehicle_group = rng.integers(1, 51, n)
     ncd_years     = rng.integers(0, 10, n)
     region        = rng.choice(
         ["North", "Midlands", "London", "South", "Scotland", "Wales"],
         size=n,
         p=[0.20, 0.20, 0.20, 0.20, 0.12, 0.08],
     )
-    exposure      = rng.uniform(0.25, 1.0, n)  # fraction of a year
+    exposure = rng.uniform(0.25, 1.0, n)
 
-    # --- True log-rate model for claim frequency ---
     log_rate = (
         -3.0
         + np.where(driver_age < 25, 0.80, 0.0)
@@ -191,14 +173,13 @@ def generate_motor_data(n, period, rng, drift=False):
         + 0.003 * vehicle_group
         + np.where(region == "London", 0.35, 0.0)
         + np.where(region == "Scotland", -0.20, 0.0)
-        + rng.normal(0, 0.10, n)   # unexplained noise
+        + rng.normal(0, 0.10, n)
     )
 
     if drift:
-        # Concept drift: young drivers claiming more than model expects
         log_rate += np.where(driver_age < 25, 0.25, 0.0)
 
-    freq      = np.exp(log_rate)
+    freq        = np.exp(log_rate)
     claim_count = rng.poisson(freq * exposure)
 
     return pl.DataFrame({
@@ -233,16 +214,11 @@ print("Current young driver proportion:",
 # MAGIC %md
 # MAGIC ## Stage 2: Train the frequency model on reference data
 # MAGIC
-# MAGIC We use CatBoost with a Poisson loss function, which is the standard choice for claim
-# MAGIC frequency in UK motor pricing. The exposure is passed as a log-offset — not as a weight.
-# MAGIC
-# MAGIC The model is trained on the reference period only. We hold out 20% for evaluation.
-# MAGIC In Module 8 this model would be registered in MLflow and loaded by name here; for
-# MAGIC this self-contained notebook we train it fresh.
+# MAGIC We use CatBoost with a Poisson loss function. The exposure is passed as a
+# MAGIC log-offset — not as a weight. The model is trained on the reference period only.
 
 # COMMAND ----------
 
-# Train/validation split within the reference period
 ref_pd = df_reference.to_pandas()
 
 split   = int(0.8 * len(ref_pd))
@@ -254,11 +230,9 @@ X_val   = ref_pd[split:][FEATURE_NAMES]
 y_val   = ref_pd[split:]["claim_count"]
 e_val   = ref_pd[split:]["exposure"]
 
-# Pool objects with exposure as baseline (log-offset)
 train_pool = Pool(
     X_train, y_train,
     cat_features=CAT_FEATURES,
-    weight=None,
     baseline=np.log(e_train.values),
 )
 val_pool = Pool(
@@ -278,7 +252,6 @@ model = CatBoostClassifier(
     verbose=100,
 )
 model.fit(train_pool, eval_set=val_pool, early_stopping_rounds=40)
-
 print(f"Best iteration: {model.best_iteration_}")
 
 # COMMAND ----------
@@ -286,21 +259,15 @@ print(f"Best iteration: {model.best_iteration_}")
 # MAGIC %md
 # MAGIC ## Stage 3: Generate predictions for both periods
 # MAGIC
-# MAGIC We generate predicted frequencies (annualised rate, not expected claim count) for
-# MAGIC every policy in both the reference and current windows.
-# MAGIC
-# MAGIC PSI runs on the raw frequency predictions. A/E runs on predicted claim counts
-# MAGIC (frequency x exposure). Gini runs on the binary claim indicator (did this policy
-# MAGIC have at least one claim?).
+# MAGIC We generate predicted frequencies for every policy in both the reference and current
+# MAGIC windows. PSI runs on the raw frequency predictions. A/E runs on predicted claim counts
+# MAGIC (frequency × exposure). Gini runs on the actual vs predicted comparison.
 
 # COMMAND ----------
 
 ref_pd = df_reference.to_pandas()
 cur_pd = df_current.to_pandas()
 
-# CatBoost Poisson predict() returns the rate (not the count)
-# The baseline offset is applied internally during training; at predict time
-# we want the rate without the exposure offset
 ref_pool_pred = Pool(ref_pd[FEATURE_NAMES], cat_features=CAT_FEATURES)
 cur_pool_pred = Pool(cur_pd[FEATURE_NAMES], cat_features=CAT_FEATURES)
 
@@ -310,14 +277,6 @@ pred_cur = model.predict(cur_pool_pred)
 exposure_ref = ref_pd["exposure"].values
 exposure_cur = cur_pd["exposure"].values
 
-# Expected claim counts = rate * exposure
-expected_ref = pred_ref * exposure_ref
-expected_cur = pred_cur * exposure_cur
-
-# Binary claim indicator for Gini
-y_ref = (ref_pd["claim_count"] > 0).astype(int).values
-y_cur = (cur_pd["claim_count"] > 0).astype(int).values
-
 actual_ref = ref_pd["claim_count"].values.astype(float)
 actual_cur = cur_pd["claim_count"].values.astype(float)
 
@@ -326,8 +285,12 @@ print(f"Reference predictions: mean={pred_ref.mean():.4f}, "
 print(f"Current predictions:   mean={pred_cur.mean():.4f}, "
       f"min={pred_cur.min():.4f}, max={pred_cur.max():.4f}")
 print()
-print(f"Reference AUC: {roc_auc_score(y_ref, pred_ref):.4f}")
-print(f"Current AUC:   {roc_auc_score(y_cur, pred_cur):.4f}")
+# AUC for information (not the primary monitoring metric — Gini is)
+from sklearn.metrics import roc_auc_score
+y_ref_binary = (actual_ref > 0).astype(int)
+y_cur_binary = (actual_cur > 0).astype(int)
+print(f"Reference AUC: {roc_auc_score(y_ref_binary, pred_ref):.4f}")
+print(f"Current AUC:   {roc_auc_score(y_cur_binary, pred_cur):.4f}")
 
 # COMMAND ----------
 
@@ -341,57 +304,42 @@ print(f"Current AUC:   {roc_auc_score(y_cur, pred_cur):.4f}")
 # MAGIC
 # MAGIC Thresholds (industry standard, from credit scoring practice):
 # MAGIC - PSI < 0.10: no significant change
-# MAGIC - PSI 0.10-0.20: minor change, worth monitoring
-# MAGIC - PSI > 0.20: significant change, investigate
+# MAGIC - PSI 0.10-0.25: moderate change, worth monitoring
+# MAGIC - PSI > 0.25: significant change, investigate
 
 # COMMAND ----------
 
-psi_calc = PSICalculator(n_bins=N_BINS)
+from insurance_monitoring.drift import psi
 
-psi_result = psi_calc.calculate(
+psi_score = psi(
     reference=pred_ref,
     current=pred_cur,
-    exposure_ref=exposure_ref,   # weight by exposure for correctness
-    exposure_cur=exposure_cur,
+    n_bins=N_BINS,
+    exposure_weights=exposure_cur,
+    reference_exposure=exposure_ref,
 )
 
-print(f"PSI (score distribution): {psi_result.psi:.4f}")
-print(f"Traffic light:            {psi_result.traffic_light}")
-print()
-print("Bin-level breakdown:")
-for bin_info in psi_result.bins:
-    print(f"  [{bin_info.lower:.3f}, {bin_info.upper:.3f}): "
-          f"ref={bin_info.ref_pct:.2%}, "
-          f"cur={bin_info.cur_pct:.2%}, "
-          f"contribution={bin_info.contribution:.4f}")
-
-# Store for report
-psi_score = psi_result
+print(f"PSI (score distribution): {psi_score:.4f}")
+if psi_score < 0.10:
+    psi_band = "green"
+elif psi_score < 0.25:
+    psi_band = "amber"
+else:
+    psi_band = "red"
+print(f"Traffic light:            {psi_band}")
 
 # COMMAND ----------
 
-# Visualise the PSI result
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-
-ax1.hist(pred_ref, bins=50, alpha=0.6, label="Reference", color="steelblue", density=True)
-ax1.hist(pred_cur, bins=50, alpha=0.6, label="Current",   color="tomato",    density=True)
-ax1.set_xlabel("Predicted frequency (annualised)")
-ax1.set_ylabel("Density")
-ax1.set_title(f"Score distribution  (PSI = {psi_result.psi:.3f}, {psi_result.traffic_light})")
-ax1.legend()
-ax1.axvline(np.median(pred_ref), color="steelblue", linestyle="--", alpha=0.7, label="Ref median")
-ax1.axvline(np.median(pred_cur), color="tomato",    linestyle="--", alpha=0.7, label="Cur median")
-
-contributions = [b.contribution for b in psi_result.bins]
-colors        = ["green" if c < 0.02 else "orange" if c < 0.05 else "red" for c in contributions]
-ax2.bar(range(len(contributions)), contributions, color=colors)
-ax2.set_xlabel("PSI bin")
-ax2.set_ylabel("Contribution to PSI")
-ax2.set_title("PSI contribution by bin")
-ax2.axhline(0.02, color="orange", linestyle="--", alpha=0.7, label="Amber threshold")
-ax2.axhline(0.05, color="red",    linestyle="--", alpha=0.7, label="Red threshold")
-ax2.legend()
-
+# Visualise score distributions
+fig, ax = plt.subplots(figsize=(10, 5))
+ax.hist(pred_ref, bins=50, alpha=0.6, label="Reference", color="steelblue", density=True)
+ax.hist(pred_cur, bins=50, alpha=0.6, label="Current",   color="tomato",    density=True)
+ax.axvline(np.median(pred_ref), color="steelblue", linestyle="--", alpha=0.7, label="Ref median")
+ax.axvline(np.median(pred_cur), color="tomato",    linestyle="--", alpha=0.7, label="Cur median")
+ax.set_xlabel("Predicted frequency (annualised)")
+ax.set_ylabel("Density")
+ax.set_title(f"Score distribution  (PSI = {psi_score:.3f}, {psi_band})")
+ax.legend()
 plt.tight_layout()
 plt.savefig("/tmp/psi_score_distribution.png", dpi=150, bbox_inches="tight")
 plt.show()
@@ -404,38 +352,26 @@ print(f"Saved to /tmp/psi_score_distribution.png")
 # MAGIC
 # MAGIC CSI is PSI applied to each input feature. It tells you which features have drifted.
 # MAGIC A high PSI with low CSI across all features means the distribution shift is not
-# MAGIC explained by the individual features (interaction effects, or a feature not in the
-# MAGIC model). A high PSI with one high-CSI feature points directly to the cause.
-# MAGIC
-# MAGIC For categorical features, each distinct value is its own bin. New categories in the
-# MAGIC current data that did not exist in reference are a hard signal — investigate the
-# MAGIC data pipeline before the model.
+# MAGIC explained by the individual features. A high PSI with one high-CSI feature points
+# MAGIC directly to the cause.
 
 # COMMAND ----------
 
-csi_calc = CSICalculator(n_bins=N_BINS)
+from insurance_monitoring.drift import csi
 
-csi_results = {}
-for feature in FEATURE_NAMES:
-    ref_values = df_reference[feature].to_numpy()
-    cur_values = df_current[feature].to_numpy()
+# csi() returns a Polars DataFrame with columns: feature, csi, band
+csi_df = csi(
+    reference_df=df_reference,
+    current_df=df_current,
+    features=FEATURE_NAMES,
+    n_bins=N_BINS,
+)
 
-    result = csi_calc.calculate(
-        feature_name=feature,
-        reference=ref_values,
-        current=cur_values,
-    )
-    csi_results[feature] = result
-
-# Summary table, ranked by CSI
 print(f"{'Feature':<25} {'CSI':>8}  {'Status'}")
 print("-" * 50)
-for feat, result in sorted(csi_results.items(), key=lambda x: x[1].csi, reverse=True):
-    flag = " <-- investigate" if result.csi > 0.20 else ""
-    print(f"{feat:<25} {result.csi:>8.4f}  {result.traffic_light}{flag}")
-
-# Store for report
-csi_scores = csi_results
+for row in csi_df.sort("csi", descending=True).iter_rows(named=True):
+    flag = " <-- investigate" if row["csi"] > 0.25 else ""
+    print(f"{row['feature']:<25} {row['csi']:>8.4f}  {row['band']}{flag}")
 
 # COMMAND ----------
 
@@ -449,26 +385,25 @@ for feature in CAT_FEATURES:
         print(f"{feature}: NEW categories in current: {new_cats}")
     if missing_cats:
         print(f"{feature}: MISSING from current (ref only): {missing_cats}")
-
 print("Category check complete.")
 
 # COMMAND ----------
 
 # Visualise features with notable drift
-notable_features = [f for f, r in csi_results.items() if r.csi > 0.10]
+notable_features = csi_df.filter(pl.col("csi") > 0.10)["feature"].to_list()
 
 if not notable_features:
     print("No features with CSI > 0.10. Book mix is stable.")
 else:
-    n_features = len(notable_features)
-    fig, axes = plt.subplots(1, n_features, figsize=(6 * n_features, 5))
-    if n_features == 1:
+    n_feat = len(notable_features)
+    fig, axes = plt.subplots(1, n_feat, figsize=(6 * n_feat, 5))
+    if n_feat == 1:
         axes = [axes]
 
     for ax, feature in zip(axes, notable_features):
-        ref_vals  = df_reference[feature].to_numpy()
-        cur_vals  = df_current[feature].to_numpy()
-        csi_val   = csi_results[feature].csi
+        ref_vals = df_reference[feature].to_numpy()
+        cur_vals = df_current[feature].to_numpy()
+        csi_val  = float(csi_df.filter(pl.col("feature") == feature)["csi"][0])
 
         ax.hist(ref_vals, bins=30, alpha=0.6, label="Reference", color="steelblue", density=True)
         ax.hist(cur_vals, bins=30, alpha=0.6, label="Current",   color="tomato",    density=True)
@@ -491,42 +426,46 @@ else:
 # MAGIC is the model's average prediction correct? We compute it at portfolio level first, then
 # MAGIC break it down by segment to find where calibration has drifted most.
 # MAGIC
-# MAGIC The confidence interval uses the Wald approximation (sqrt of observed claims, not
-# MAGIC expected). This is slightly conservative when A/E is far from 1.0 but adequate for
-# MAGIC routine monitoring. If 1.0 is inside the 95% CI, there is no statistically significant
-# MAGIC evidence of a calibration problem.
+# MAGIC We use `ae_ratio_ci()` for the portfolio level — it returns the point estimate plus a
+# MAGIC Poisson confidence interval (Garwood exact method). If 1.0 is inside the 95% CI, there
+# MAGIC is no statistically significant evidence of a calibration problem.
 
 # COMMAND ----------
 
-ae_calc = AERatio()
+from insurance_monitoring.calibration import ae_ratio, ae_ratio_ci
 
-ae_result = ae_calc.calculate(
+ae_result = ae_ratio_ci(
     actual=actual_cur,
-    expected=expected_cur,
+    predicted=pred_cur,
     exposure=exposure_cur,
+    alpha=0.05,
+    method="poisson",
 )
 
-print(f"Portfolio A/E ratio: {ae_result.ratio:.4f}")
-print(f"95% CI:              [{ae_result.ci_lower:.4f}, {ae_result.ci_upper:.4f}]")
-print(f"Actual claims:       {actual_cur.sum():.0f}")
-print(f"Expected claims:     {expected_cur.sum():.1f}")
-print(f"Traffic light:       {ae_result.traffic_light}")
+# ae_ratio_ci returns: {"ae": float, "lower": float, "upper": float, "n_claims": float, "n_expected": float}
+ae_val    = ae_result["ae"]
+ae_lower  = ae_result["lower"]
+ae_upper  = ae_result["upper"]
+n_claims  = ae_result["n_claims"]
+n_expected = ae_result["n_expected"]
+
+print(f"Portfolio A/E ratio: {ae_val:.4f}")
+print(f"95% CI:              [{ae_lower:.4f}, {ae_upper:.4f}]")
+print(f"Actual claims:       {n_claims:.0f}")
+print(f"Expected claims:     {n_expected:.1f}")
 print()
-if ae_result.ci_lower > 1.0:
+if ae_lower > 1.0:
     print("CI excludes 1.0 from below. Model is systematically under-predicting.")
-elif ae_result.ci_upper < 1.0:
+elif ae_upper < 1.0:
     print("CI excludes 1.0 from above. Model is systematically over-predicting.")
 else:
     print("CI contains 1.0. No statistically significant evidence of calibration drift.")
-
-# Store for report
-ae_portfolio = ae_result
 
 # COMMAND ----------
 
 # Segment A/E breakdown by driver age band
 df_cur_with_preds = df_current.with_columns([
-    pl.Series("expected", expected_cur),
+    pl.Series("expected", pred_cur * exposure_cur),
 ])
 
 age_bands = [(17, 25, "17-24"), (25, 40, "25-39"), (40, 60, "40-59"), (60, 100, "60+")]
@@ -544,19 +483,21 @@ for low, high, label in age_bands:
     if len(seg) == 0:
         continue
 
-    result = ae_calc.calculate(
+    seg_result = ae_ratio_ci(
         actual=seg["claim_count"].to_numpy().astype(float),
-        expected=seg["expected"].to_numpy(),
-        exposure=seg["exposure"].to_numpy(),
+        predicted=seg["expected"].to_numpy(),
+        method="poisson",
     )
-    print(f"{label:<15} {result.ratio:>8.4f}  {result.ci_lower:>10.4f}  "
-          f"{result.ci_upper:>10.4f}  {seg['claim_count'].sum():>8.0f}  "
+    # predicted here is already expected counts (freq * exposure), so pass exposure=None
+    # but ae_ratio_ci with predicted = expected_counts and no exposure divides sum(actual)/sum(expected)
+    print(f"{label:<15} {seg_result['ae']:>8.4f}  {seg_result['lower']:>10.4f}  "
+          f"{seg_result['upper']:>10.4f}  {seg['claim_count'].sum():>8.0f}  "
           f"{seg['expected'].sum():>10.1f}")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Stage 7: Gini drift z-test (DeLong method)
+# MAGIC ## Stage 7: Gini drift test
 # MAGIC
 # MAGIC The Gini coefficient measures discrimination: does the model rank high-risk policies
 # MAGIC above low-risk ones? A falling Gini means the model is less able to distinguish
@@ -566,30 +507,37 @@ for low, high, label in age_bands:
 # MAGIC - A/E off, Gini OK: calibration problem. Apply a recalibration factor.
 # MAGIC - Gini dropping, A/E may or may not be affected: discrimination has weakened. Retraining required.
 # MAGIC - Both off: serious. Escalate immediately.
-# MAGIC
-# MAGIC The DeLong variance estimator properly accounts for the correlation structure when
-# MAGIC comparing AUC across two samples.
 
 # COMMAND ----------
 
-gini_calc = GiniDrift()
+from insurance_monitoring.discrimination import gini_coefficient, gini_drift_test
 
-gini_result = gini_calc.calculate(
-    y_ref=y_ref,
-    pred_ref=pred_ref,
-    y_cur=y_cur,
-    pred_cur=pred_cur,
+gini_ref = gini_coefficient(actual_ref, pred_ref, exposure=exposure_ref)
+gini_cur = gini_coefficient(actual_cur, pred_cur, exposure=exposure_cur)
+
+# gini_drift_test returns a GiniDriftResult with fields:
+#   reference_gini, current_gini, gini_change, z_statistic, p_value, significant
+gini_result = gini_drift_test(
+    reference_gini=gini_ref,
+    current_gini=gini_cur,
+    reference_actual=actual_ref,
+    reference_predicted=pred_ref,
+    reference_exposure=exposure_ref,
+    current_actual=actual_cur,
+    current_predicted=pred_cur,
+    current_exposure=exposure_cur,
+    n_bootstrap=200,
 )
 
-print(f"Gini (reference): {gini_result.gini_ref:.4f}")
-print(f"Gini (current):   {gini_result.gini_cur:.4f}")
-print(f"Difference:       {gini_result.gini_cur - gini_result.gini_ref:+.4f}")
-print(f"Z-statistic:      {gini_result.z_stat:.4f}")
+print(f"Gini (reference): {gini_result.reference_gini:.4f}")
+print(f"Gini (current):   {gini_result.current_gini:.4f}")
+print(f"Change:           {gini_result.gini_change:+.4f}")
+print(f"Z-statistic:      {gini_result.z_statistic:.4f}")
 print(f"P-value:          {gini_result.p_value:.4f}")
-print(f"Traffic light:    {gini_result.traffic_light}")
+print(f"Significant:      {gini_result.significant}")
 print()
 if gini_result.p_value < 0.05:
-    drop = gini_result.gini_ref - gini_result.gini_cur
+    drop = gini_ref - gini_cur
     if drop > 0.03:
         print("Statistically significant Gini drop >= 0.03. Discrimination has weakened. "
               "Retraining is required.")
@@ -598,36 +546,33 @@ if gini_result.p_value < 0.05:
 else:
     print("No statistically significant Gini change. Discrimination is stable.")
 
-# Store for report
-gini_drift = gini_result
-
 # COMMAND ----------
 
 # ROC curves for reference and current periods
-from sklearn.metrics import roc_curve
-
 fig, axes = plt.subplots(1, 2, figsize=(14, 6))
 
-fpr_ref, tpr_ref, _ = roc_curve(y_ref, pred_ref)
+from sklearn.metrics import roc_curve
+
+fpr_ref, tpr_ref, _ = roc_curve(y_ref_binary, pred_ref)
 axes[0].plot(fpr_ref, tpr_ref, color="steelblue", linewidth=2,
-             label=f"Reference (Gini={gini_result.gini_ref:.3f})")
+             label=f"Reference (Gini={gini_result.reference_gini:.3f})")
 axes[0].plot([0, 1], [0, 1], "k--", alpha=0.5)
 axes[0].set_xlabel("False positive rate")
 axes[0].set_ylabel("True positive rate")
-axes[0].set_title("ROC - Reference period")
+axes[0].set_title("ROC — Reference period")
 axes[0].legend()
 
-fpr_cur, tpr_cur, _ = roc_curve(y_cur, pred_cur)
+fpr_cur, tpr_cur, _ = roc_curve(y_cur_binary, pred_cur)
 axes[1].plot(fpr_cur, tpr_cur, color="tomato", linewidth=2,
-             label=f"Current (Gini={gini_result.gini_cur:.3f})")
+             label=f"Current (Gini={gini_result.current_gini:.3f})")
 axes[1].plot([0, 1], [0, 1], "k--", alpha=0.5)
 axes[1].set_xlabel("False positive rate")
 axes[1].set_ylabel("True positive rate")
-axes[1].set_title("ROC - Current period")
+axes[1].set_title("ROC — Current period")
 axes[1].legend()
 
 plt.suptitle(
-    f"Gini drift: {gini_result.gini_ref:.3f} -> {gini_result.gini_cur:.3f}  "
+    f"Gini drift: {gini_result.reference_gini:.3f} → {gini_result.current_gini:.3f}  "
     f"(p={gini_result.p_value:.3f})",
     fontsize=13
 )
@@ -641,160 +586,75 @@ print("Saved to /tmp/gini_drift.png")
 # MAGIC %md
 # MAGIC ## Stage 8: Build the MonitoringReport
 # MAGIC
-# MAGIC The `MonitoringReport` class assembles all four metrics and applies the combined
-# MAGIC traffic-light rules:
+# MAGIC `MonitoringReport` is a dataclass that runs all checks at construction time. Pass your
+# MAGIC arrays and feature DataFrames in; it immediately computes A/E, Gini drift, CSI, and
+# MAGIC an optional Murphy decomposition. Access results via `results_`, `recommendation`,
+# MAGIC `to_dict()`, or `to_polars()`.
 # MAGIC
-# MAGIC | Metric | Green | Amber | Red |
-# MAGIC |--------|-------|-------|-----|
-# MAGIC | Score PSI | < 0.10 | 0.10-0.20 | > 0.20 |
-# MAGIC | A/E ratio | CI contains 1.0 | CI excludes 1.0, ratio in [0.90, 1.10] | CI excludes 1.0, ratio outside [0.90, 1.10] |
-# MAGIC | Gini drop | drop < 0.03 AND p > 0.10 | weak signal | p < 0.05 and drop >= 0.03 |
-# MAGIC | Any CSI | < 0.10 | 0.10-0.20 | > 0.20 |
-# MAGIC
-# MAGIC Overall: RED if any metric is RED; AMBER if two or more metrics are AMBER or one is
-# MAGIC AMBER and rest are GREEN; GREEN otherwise.
+# MAGIC The `recommendation` property implements the three-stage decision tree from
+# MAGIC arXiv 2510.04556:
+# MAGIC - Gini OK + A/E OK → NO_ACTION
+# MAGIC - A/E bad only → RECALIBRATE
+# MAGIC - Gini bad → REFIT
+# MAGIC - Multiple conflicting signals → INVESTIGATE
 
 # COMMAND ----------
+
+from insurance_monitoring import MonitoringReport
 
 report = MonitoringReport(
-    model_name=MODEL_NAME,
-    reference_date=REFERENCE_DATE,
-    current_date=CURRENT_DATE,
+    reference_actual=actual_ref,
+    reference_predicted=pred_ref,
+    current_actual=actual_cur,
+    current_predicted=pred_cur,
+    exposure=exposure_cur,
+    reference_exposure=exposure_ref,
+    feature_df_reference=df_reference,
+    feature_df_current=df_current,
+    features=FEATURE_NAMES,
+    murphy_distribution="poisson",   # Murphy decomposition: sharpens RECALIBRATE vs REFIT
+    gini_bootstrap=False,            # set True to add percentile CIs on Gini (slower)
 )
 
-report.add_psi(psi_score)
-
-for feature, result in csi_scores.items():
-    report.add_csi(result)
-
-report.add_ae(ae_portfolio)
-report.add_gini_drift(gini_drift)
-
 # COMMAND ----------
 
-summary = report.summary()
-
-print("=" * 60)
-print("MONITORING REPORT")
-print(f"Model:     {summary['model_name']}")
-print(f"Reference: {summary['reference_date']}")
-print(f"Current:   {summary['current_date']}")
-print(f"Run date:  {summary['run_date']}")
-print("=" * 60)
+# MonitoringReport computes everything in __post_init__.
+# results_ is a dict; recommendation is the decision string.
+print("Recommendation:", report.recommendation)
 print()
 
-overall = summary["overall_traffic_light"]
-print(f"OVERALL STATUS: {overall}")
+results = report.results_
+
+ae_res   = results["ae_ratio"]
+gini_res = results["gini"]
+
+print(f"A/E ratio:    {ae_res['value']:.4f}  (CI: [{ae_res['lower_ci']:.4f}, {ae_res['upper_ci']:.4f}])  [{ae_res['band']}]")
+print(f"Gini current: {gini_res['current']:.4f}  (ref: {gini_res['reference']:.4f})  [{gini_res['band']}]")
+print(f"Gini p-value: {gini_res['p_value']:.4f}")
 print()
 
-m = summary["metrics"]
-print(f"{'Metric':<35} {'Value':>10}  {'Status'}")
-print("-" * 60)
-print(f"{'Score PSI':<35} {m['psi_score']['value']:>10.4f}  {m['psi_score']['traffic_light']}")
-print(f"{'A/E ratio':<35} {m['ae_ratio']['value']:>10.4f}  {m['ae_ratio']['traffic_light']}")
-print(f"{'A/E CI lower':<35} {m['ae_ratio']['ci_lower']:>10.4f}")
-print(f"{'A/E CI upper':<35} {m['ae_ratio']['ci_upper']:>10.4f}")
-print(f"{'Gini (reference)':<35} {m['gini']['gini_ref']:>10.4f}")
-print(f"{'Gini (current)':<35} {m['gini']['gini_cur']:>10.4f}  {m['gini']['traffic_light']}")
-print(f"{'Gini p-value':<35} {m['gini']['p_value']:>10.4f}")
-print()
-print("FEATURE CSI:")
-print(f"{'Feature':<30} {'CSI':>8}  {'Status'}")
-print("-" * 50)
-for csi_item in sorted(summary["csi"], key=lambda x: x["csi"], reverse=True):
-    print(f"{csi_item['feature']:<30} {csi_item['csi']:>8.4f}  {csi_item['traffic_light']}")
+if "max_csi" in results:
+    mc = results["max_csi"]
+    print(f"Max CSI:      {mc['value']:.4f}  ({mc['worst_feature']})  [{mc['band']}]")
+
+if report.murphy_available:
+    m = results["murphy"]
+    print()
+    print(f"Murphy discrimination %:  {m['discrimination_pct']:.1f}%")
+    print(f"Murphy miscalibration %:  {m['miscalibration_pct']:.1f}%")
+    print(f"Murphy verdict:           {m['verdict']}")
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Stage 9: Interpret the signals
-# MAGIC
-# MAGIC This cell prints a structured interpretation of the combined monitoring signals.
-# MAGIC In production this would be the body of an automated email to the pricing team.
-# MAGIC
-# MAGIC The five scenarios to recognise:
-# MAGIC 1. All green: log and move on
-# MAGIC 2. Elevated PSI, green A/E, stable Gini: mix shift absorbed by model — no action
-# MAGIC 3. Elevated PSI, elevated A/E, stable Gini: calibration problem — apply recalibration factor
-# MAGIC 4. Green PSI, elevated A/E, falling Gini: concept drift — escalate, begin retraining
-# MAGIC 5. Elevated CSI on one feature, all else green: investigate the feature, no immediate model action
+# Flat Polars DataFrame version — one row per metric
+print("\nMonitoring results (flat):")
+print(report.to_polars())
 
 # COMMAND ----------
 
-def interpret_monitoring_report(summary):
-    """Print a structured interpretation of the monitoring summary."""
-    m       = summary["metrics"]
-    overall = summary["overall_traffic_light"]
-    psi_val = m["psi_score"]["value"]
-    psi_tl  = m["psi_score"]["traffic_light"]
-    ae_val  = m["ae_ratio"]["value"]
-    ae_tl   = m["ae_ratio"]["traffic_light"]
-    gini_tl = m["gini"]["traffic_light"]
-    gini_p  = m["gini"]["p_value"]
-    gini_drop = m["gini"]["gini_ref"] - m["gini"]["gini_cur"]
-
-    red_csi_features = [c["feature"] for c in summary["csi"] if c["traffic_light"] == "RED"]
-
-    print(f"INTERPRETATION ({overall})")
-    print("=" * 60)
-
-    # Scenario 1: all green
-    if overall == "GREEN":
-        print("All metrics within tolerance. No model action required.")
-        print("Log this result and file as evidence of ongoing monitoring.")
-        return
-
-    # Scenario 4: concept drift (most serious)
-    if (psi_tl == "GREEN" and ae_tl in ("AMBER", "RED")
-            and gini_tl in ("AMBER", "RED") and gini_p < 0.05 and gini_drop > 0.02):
-        print("PATTERN: Green PSI, elevated A/E, falling Gini.")
-        print("This is CONCEPT DRIFT. The relationship between features and claims has changed.")
-        print("A recalibration factor will fix the average but not the discrimination.")
-        print("ACTION: Escalate to head of pricing. Begin retraining. Apply temporary")
-        print("recalibration factor (1/A/E) as a holding measure while retraining runs.")
-        return
-
-    # Scenario 3: calibration problem
-    if (psi_tl in ("AMBER", "RED") and ae_tl in ("AMBER", "RED")
-            and gini_tl == "GREEN"):
-        print("PATTERN: Elevated PSI, elevated A/E, stable Gini.")
-        print(f"Score distribution has shifted (PSI={psi_val:.3f}) and the model is")
-        print(f"{'under' if ae_val > 1.0 else 'over'}-predicting overall (A/E={ae_val:.3f}).")
-        print("Discrimination is intact (Gini stable). This is a calibration problem")
-        print("driven by mix shift.")
-        print(f"ACTION: Apply a recalibration factor of 1/{ae_val:.3f} = "
-              f"{1/ae_val:.3f} to all predictions while investigating root cause.")
-        return
-
-    # Scenario 2: mix shift absorbed
-    if psi_tl in ("AMBER", "RED") and ae_tl == "GREEN" and gini_tl == "GREEN":
-        print("PATTERN: Elevated PSI, green A/E, stable Gini.")
-        print("The book mix has changed but the model is correctly applying risk loads")
-        print("to the new mix. No model action required.")
-        print("ACTION: Log the CSI results. Update the reference distribution if the")
-        print("new mix is structural (not seasonal).")
-        return
-
-    # Scenario 5: single feature CSI elevated, all else ok
-    if red_csi_features and ae_tl == "GREEN" and gini_tl == "GREEN":
-        print(f"PATTERN: High CSI on {red_csi_features}, other metrics green.")
-        print("Feature(s) have shifted but are not materially affecting predictions.")
-        print("ACTION: Investigate whether the shift is a data quality issue or genuine.")
-        print("Flag for review at next model validation. No immediate model action.")
-        return
-
-    # Generic fallback
-    print(f"Combined amber/red signals across: PSI={psi_tl}, A/E={ae_tl}, Gini={gini_tl}")
-    print("Review individual metrics above. No single scenario pattern matched.")
-    print("Bring to pricing committee with the full monitoring pack.")
-
-
-interpret_monitoring_report(summary)
-
-# COMMAND ----------
-
-# Save the report as JSON to DBFS
-report_json = json.dumps(summary, indent=2, default=str)
+# Full dict — suitable for JSON serialisation and Delta write
+report_dict = report.to_dict()
+report_json = json.dumps(report_dict, indent=2, default=str)
 report_path = f"/tmp/monitoring_report_{CURRENT_DATE}.json"
 with open(report_path, "w") as f:
     f.write(report_json)
@@ -806,16 +666,88 @@ print(report_json[:600])
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Stage 9: Interpret the signals
+# MAGIC
+# MAGIC The five scenarios to recognise:
+# MAGIC 1. All green: log and move on
+# MAGIC 2. Elevated PSI, green A/E, stable Gini: mix shift absorbed by model — no action
+# MAGIC 3. Elevated PSI, elevated A/E, stable Gini: calibration problem — apply recalibration factor
+# MAGIC 4. Green PSI, elevated A/E, falling Gini: concept drift — escalate, begin retraining
+# MAGIC 5. Elevated CSI on one feature, all else green: investigate the feature, no immediate model action
+
+# COMMAND ----------
+
+def interpret_monitoring_signals(report):
+    """Print a structured interpretation of monitoring signals."""
+    recommendation = report.recommendation
+    results        = report.results_
+
+    ae_band   = results["ae_ratio"]["band"]
+    ae_val    = results["ae_ratio"]["value"]
+    gini_band = results["gini"]["band"]
+    gini_p    = results["gini"]["p_value"]
+    gini_drop = results["gini"]["reference"] - results["gini"]["current"]
+
+    red_csi_features = []
+    if "csi" in results:
+        red_csi_features = [r["feature"] for r in results["csi"] if r["band"] == "red"]
+
+    print(f"RECOMMENDATION: {recommendation}")
+    print("=" * 60)
+
+    if recommendation == "NO_ACTION":
+        print("All metrics within tolerance. No model action required.")
+        print("Log this result and file as evidence of ongoing monitoring.")
+        return
+
+    if recommendation == "REFIT":
+        print("PATTERN: Gini has degraded. Discrimination has weakened.")
+        print("The model is less able to separate high-risk from low-risk policies.")
+        print("A recalibration factor will fix the average but not the ranking.")
+        print("ACTION: Escalate to head of pricing. Begin retraining on recent data.")
+        print("Apply a temporary recalibration factor (1/A/E) as a holding measure.")
+        return
+
+    if recommendation == "RECALIBRATE":
+        print("PATTERN: A/E shifted, Gini stable.")
+        print(f"Model is {'under' if ae_val > 1.0 else 'over'}-predicting overall "
+              f"(A/E={ae_val:.3f}) but discrimination is intact.")
+        print(f"ACTION: Apply a recalibration factor of {1/ae_val:.3f} to all predictions.")
+        print("Investigate root cause (mix shift, inflation, underwriting rule change).")
+        return
+
+    if recommendation == "INVESTIGATE":
+        print("PATTERN: Multiple signals in conflict. Manual review required.")
+        print(f"  A/E band: {ae_band},  Gini band: {gini_band}")
+        print("ACTION: Bring to pricing committee with the full monitoring pack.")
+        return
+
+    if recommendation == "MONITOR_CLOSELY":
+        print("PATTERN: Amber signals but no red. Watch the trend.")
+        print("No immediate model action required.")
+        if red_csi_features:
+            print(f"Feature(s) with elevated CSI: {red_csi_features}")
+            print("Investigate whether the shift is data quality or genuine book change.")
+        return
+
+    print(f"Combined signals: A/E={ae_band}, Gini={gini_band}")
+    print("Review individual metrics above.")
+
+
+interpret_monitoring_signals(report)
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Stage 10: Write monitoring results to Delta tables
 # MAGIC
 # MAGIC Three tables:
-# MAGIC - `monitoring_log` — one row per monitoring run (the headline summary)
-# MAGIC - `csi_results` — one row per feature per run (the detail for trend analysis)
+# MAGIC - `monitoring_log` — one row per monitoring run (headline summary)
+# MAGIC - `csi_results` — one row per feature per run (for trend analysis)
 # MAGIC - `ae_results` — one row per segment per run
 # MAGIC
 # MAGIC We set a 7-year retention policy on the monitoring log. FCA record-keeping requirements
-# MAGIC are broadly aligned with this window. Without explicitly setting `logRetentionDuration`,
-# MAGIC time travel fails after 30 days even if data files are present.
+# MAGIC are broadly aligned with this window.
 
 # COMMAND ----------
 
@@ -826,30 +758,28 @@ print(f"Schema ready: {CATALOG}.{SCHEMA}")
 
 from pyspark.sql import Row
 
-# -----------------------------------------------------------------------
 # Write the monitoring summary (one row per run)
-# -----------------------------------------------------------------------
 summary_row = {
     "run_date":              RUN_DATE,
     "model_name":            MODEL_NAME,
     "model_version":         MODEL_VERSION,
     "reference_date":        REFERENCE_DATE,
     "current_date":          CURRENT_DATE,
-    "overall_traffic_light": summary["overall_traffic_light"],
-    "psi_score":             float(summary["metrics"]["psi_score"]["value"]),
-    "psi_traffic_light":     summary["metrics"]["psi_score"]["traffic_light"],
-    "ae_ratio":              float(summary["metrics"]["ae_ratio"]["value"]),
-    "ae_ci_lower":           float(summary["metrics"]["ae_ratio"]["ci_lower"]),
-    "ae_ci_upper":           float(summary["metrics"]["ae_ratio"]["ci_upper"]),
-    "ae_traffic_light":      summary["metrics"]["ae_ratio"]["traffic_light"],
-    "gini_ref":              float(summary["metrics"]["gini"]["gini_ref"]),
-    "gini_cur":              float(summary["metrics"]["gini"]["gini_cur"]),
-    "gini_p_value":          float(summary["metrics"]["gini"]["p_value"]),
-    "gini_traffic_light":    summary["metrics"]["gini"]["traffic_light"],
+    "recommendation":        report.recommendation,
+    "ae_ratio":              float(results["ae_ratio"]["value"]),
+    "ae_ci_lower":           float(results["ae_ratio"]["lower_ci"]),
+    "ae_ci_upper":           float(results["ae_ratio"]["upper_ci"]),
+    "ae_band":               results["ae_ratio"]["band"],
+    "gini_ref":              float(results["gini"]["reference"]),
+    "gini_cur":              float(results["gini"]["current"]),
+    "gini_p_value":          float(results["gini"]["p_value"]),
+    "gini_band":             results["gini"]["band"],
+    "psi_score":             float(psi_score),
+    "psi_band":              psi_band,
     "reference_n":           int(len(df_reference)),
     "current_n":             int(len(df_current)),
     "actual_claims":         int(actual_cur.sum()),
-    "expected_claims":       float(expected_cur.sum()),
+    "expected_claims":       float((pred_cur * exposure_cur).sum()),
 }
 
 summary_df = spark.createDataFrame([Row(**summary_row)])
@@ -865,24 +795,22 @@ print(f"Monitoring summary written to {TABLES['monitoring_log']}")
 
 # COMMAND ----------
 
-# -----------------------------------------------------------------------
 # Write CSI detail (one row per feature per run)
-# -----------------------------------------------------------------------
 csi_rows = []
-for feature, result in csi_scores.items():
+for row in csi_df.iter_rows(named=True):
     csi_rows.append({
         "run_date":      RUN_DATE,
         "model_name":    MODEL_NAME,
         "current_date":  CURRENT_DATE,
-        "feature":       feature,
-        "csi":           float(result.csi),
-        "traffic_light": result.traffic_light,
+        "feature":       row["feature"],
+        "csi":           float(row["csi"]),
+        "band":          row["band"],
         "n_bins":        N_BINS,
     })
 
-csi_df = spark.createDataFrame([Row(**r) for r in csi_rows])
+csi_spark = spark.createDataFrame([Row(**r) for r in csi_rows])
 
-(csi_df
+(csi_spark
  .write
  .format("delta")
  .mode("append")
@@ -893,26 +821,24 @@ print(f"CSI detail written to {TABLES['csi_results']}  ({len(csi_rows)} rows)")
 
 # COMMAND ----------
 
-# -----------------------------------------------------------------------
 # Write A/E results (portfolio level)
-# -----------------------------------------------------------------------
 ae_rows = [{
     "run_date":      RUN_DATE,
     "model_name":    MODEL_NAME,
     "current_date":  CURRENT_DATE,
     "segment":       "portfolio",
     "segment_value": "all",
-    "ae_ratio":      float(ae_portfolio.ratio),
-    "ci_lower":      float(ae_portfolio.ci_lower),
-    "ci_upper":      float(ae_portfolio.ci_upper),
+    "ae_ratio":      float(results["ae_ratio"]["value"]),
+    "ci_lower":      float(results["ae_ratio"]["lower_ci"]),
+    "ci_upper":      float(results["ae_ratio"]["upper_ci"]),
     "actual":        float(actual_cur.sum()),
-    "expected":      float(expected_cur.sum()),
-    "traffic_light": ae_portfolio.traffic_light,
+    "expected":      float((pred_cur * exposure_cur).sum()),
+    "band":          results["ae_ratio"]["band"],
 }]
 
-ae_df = spark.createDataFrame([Row(**r) for r in ae_rows])
+ae_spark = spark.createDataFrame([Row(**r) for r in ae_rows])
 
-(ae_df
+(ae_spark
  .write
  .format("delta")
  .mode("append")
@@ -923,9 +849,7 @@ print(f"A/E results written to {TABLES['ae_results']}")
 
 # COMMAND ----------
 
-# -----------------------------------------------------------------------
 # Set 7-year retention policy on the monitoring log
-# -----------------------------------------------------------------------
 spark.sql(f"""
     ALTER TABLE {TABLES["monitoring_log"]}
     SET TBLPROPERTIES (
@@ -944,7 +868,7 @@ SELECT
     ae_ratio,
     ae_ci_lower,
     ae_ci_upper,
-    overall_traffic_light,
+    recommendation,
     psi_score,
     gini_cur,
     gini_p_value
@@ -966,14 +890,14 @@ trend_df.show()
 # MAGIC
 # MAGIC | Step | What it tests | Key output |
 # MAGIC |------|---------------|-----------|
-# MAGIC | PSI | Score distribution stability | Traffic light + bin breakdown |
-# MAGIC | CSI | Feature distribution stability | Ranked feature table |
-# MAGIC | A/E | Calibration (mean accuracy) | Ratio + 95% CI |
-# MAGIC | Gini drift | Discrimination (ranking accuracy) | Z-stat + p-value |
-# MAGIC | MonitoringReport | Combined interpretation | Overall traffic light |
+# MAGIC | PSI (`psi()`) | Score distribution stability | Float (< 0.10 green, > 0.25 red) |
+# MAGIC | CSI (`csi()`) | Feature distribution stability | Polars DataFrame, one row per feature |
+# MAGIC | A/E (`ae_ratio_ci()`) | Calibration (mean accuracy) | Dict: ae, lower, upper, n_claims |
+# MAGIC | Gini drift (`gini_drift_test()`) | Discrimination (ranking accuracy) | GiniDriftResult: z_statistic, p_value |
+# MAGIC | `MonitoringReport` | Combined interpretation | recommendation, results_, to_polars() |
 # MAGIC
 # MAGIC **What to do with the results:**
-# MAGIC - All GREEN: log and move on
+# MAGIC - All green: log and move on
 # MAGIC - Elevated PSI, green A/E, stable Gini: mix shift — no model action
 # MAGIC - Elevated PSI + A/E, stable Gini: calibration problem — apply recalibration factor
 # MAGIC - Green PSI, elevated A/E, falling Gini: concept drift — escalate and retrain
@@ -992,4 +916,4 @@ print("Module 11 notebook complete.")
 print(f"  Monitoring log:  {TABLES['monitoring_log']}")
 print(f"  CSI detail:      {TABLES['csi_results']}")
 print(f"  A/E detail:      {TABLES['ae_results']}")
-print(f"  Overall status:  {summary['overall_traffic_light']}")
+print(f"  Recommendation:  {report.recommendation}")

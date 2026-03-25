@@ -1,92 +1,66 @@
 ## Part 15: Practical deployment considerations
 
-The demand and elasticity models require ongoing monitoring and periodic re-fitting. This part covers what that looks like in practice.
-
 ### How often to refit
 
-The conversion model should be refitted at least quarterly. Conversion rates shift with market conditions, competitor behaviour, PCW algorithm changes, and seasonal patterns. A model trained on data from 18 months ago may have learned a relationship between price ratio and conversion that no longer holds.
+The elasticity model captures a structural relationship: how customers respond to price changes at the current state of the market. That relationship changes — slowly, but meaningfully — with market conditions, competitor behaviour, PCW algorithmic changes, and the mix of customers acquired.
 
-A practical refit schedule for a medium-sized motor book:
+Our recommendation for a medium-sized UK motor book:
 
-- **Conversion model**: quarterly refit on the most recent 12 months of quotes
-- **Retention model**: semi-annual refit on the most recent 18 months of renewals
-- **Elasticity model**: annual refit, triggered by major pricing events (bulk re-rate, PCW relationship change, post-FCA review)
-
-The elasticity model is refitted less frequently because it requires sufficient residual treatment variation, which accumulates slowly from rate reviews and any A/B tests.
+- **Renewal elasticity model**: annual refit, triggered early by major pricing events (bulk re-rate, entry of a new aggregator, post-FCA review). The refitting requires sufficient residual treatment variation, which accumulates from rate reviews — weekly refitting gains nothing.
+- **Treatment variation diagnostic**: run before every fit. If variation drops below the threshold between refits, the model should not be used until the cause is understood.
+- **ENBP audit**: run after every pricing file generation, not just after model refits.
 
 ### What you need to store at quote time
 
-The single most common data quality problem in demand modelling is not having the technical premium stored at quote time. The technical premium must be the value from the underwriting system at the moment the quote was issued. Retrospectively recalculated technical premiums - even if they use the same model - introduce errors because the model may have changed, the reference data may have changed, and the quote date effects are lost.
+The most common data quality problem in insurance demand modelling is not having the technical premium stored at the moment the quote was issued.
 
-If your quotes table does not contain a `technical_premium_at_quote` column, the DML identification argument is weaker. You are stuck using log(quoted_price) as the treatment rather than log(quoted_price / technical_premium), and the confounding problem is harder to solve.
+The technical premium used in the DML treatment variable must be the value from the underwriting system at the time of quoting. A retrospectively recalculated technical premium — even from the same model — introduces errors because the model may have changed, the reference data (e.g. claims development) will have changed, and the quote-date effect is lost.
 
-The fix is simple but requires buy-in from the technology team: add a column to the quote event table that captures the risk model output at that moment. It is a one-time data plumbing change that permanently improves your causal identification.
+If your renewal table does not contain `tech_prem_at_quote` or equivalent, your treatment variable is log(offer_price / last_premium) rather than log(offer_price / tech_prem). This is less clean causally — last premium is correlated with the previous year's risk profile rather than this year's — but is still workable if the book is re-rated consistently.
 
-### MLflow experiment tracking
+The fix is a one-time schema change: add a `tech_prem_at_quote` column to the renewal event table. It costs nothing computationally and permanently improves identification.
 
-Log all model outputs to MLflow for the audit trail. Add a markdown cell:
+### Production data pipeline
 
-```python
-%md
-## Part 15: MLflow logging
-```
+In production, the full pipeline looks like:
 
 ```python
-import mlflow
-import mlflow.sklearn
+# 1. Load renewal data from Delta (replace 'pricing.motor.renewals_2025_q1')
+df_prod = pl.from_pandas(
+    spark.table("pricing.motor.renewals_2025_q1").toPandas()
+)
 
-# Create an experiment if it does not already exist
-mlflow.set_experiment("/Users/your.email@company.com/module-09-demand-elasticity")
+# 2. Run diagnostic
+confounders = ["age", "ncd_years", "vehicle_group", "region", "channel"]
+diag = ElasticityDiagnostics()
+report = diag.treatment_variation_report(df_prod, confounders=confounders)
+if report.weak_treatment:
+    raise RuntimeError(f"Weak treatment: {report.summary()}")
 
-with mlflow.start_run(run_name="conversion_elasticity_dml"):
-    # Log the elasticity estimate
-    mlflow.log_metric("elasticity_ate", est_conversion.elasticity_)
-    mlflow.log_metric("elasticity_se", est_conversion.elasticity_se_)
-    mlflow.log_metric("elasticity_ci_lower", est_conversion.elasticity_ci_[0])
-    mlflow.log_metric("elasticity_ci_upper", est_conversion.elasticity_ci_[1])
+# 3. Fit estimator
+est = RenewalElasticityEstimator(n_estimators=200, catboost_iterations=500)
+est.fit(df_prod, confounders=confounders)
 
-    # Log parameters
-    mlflow.log_param("n_folds", est_conversion.n_folds)
-    mlflow.log_param("outcome_model", est_conversion.outcome_model)
-    mlflow.log_param("treatment_col", est_conversion.treatment_col)
-    mlflow.log_param("n_training_records", len(df_quotes))
+# 4. Optimise per-policy
+opt = RenewalPricingOptimiser(est, technical_premium_col="tech_prem", enbp_col="enbp")
+priced = opt.optimise(df_prod, objective="profit")
 
-    # Log the audit summary
-    mlflow.log_metric("enbp_breach_count", n_breaches)
-    mlflow.log_metric("portfolio_renewal_rate_predicted",
-                      float(priced_df["predicted_renewal_prob"].mean()))
+# 5. Audit
+audit = opt.enbp_audit(priced)
+if (~audit["compliant"]).any():
+    raise RuntimeError("ENBP breach detected — do not issue prices")
 
-    print("Logged to MLflow.")
-    print(f"Run ID: {mlflow.active_run().info.run_id}")
+# 6. Write to Delta
+spark.createDataFrame(priced.to_pandas()).write.format("delta") \
+    .mode("overwrite").saveAsTable("pricing.motor.renewal_prices_2025_q1")
+spark.createDataFrame(audit.to_pandas()).write.format("delta") \
+    .mode("append").saveAsTable("pricing.motor.enbp_audit_log")
 ```
 
-In a governance context, every elasticity estimate used in a pricing decision should have:
-- The run ID from MLflow (so you can trace which model produced which output)
-- The date of fitting and the date range of training data
-- The ENBP audit summary signed off by the pricing actuary
-- The treatment variation diagnostic output (confirming sufficient price variation)
+Steps 2 and 6 are guardrails: the diagnostic raises before the fit if the data is not identifiable, and the audit raises before writing if prices breach ENBP. Both are implemented as hard failures rather than warnings, because a silent compliance failure is worse than a noisy one.
 
-### Writing results to Unity Catalog
+### Limitations of the linear demand approximation
 
-```python
-# Write the priced renewal portfolio to a Delta table
-priced_df_pd = priced_df.to_pandas()
+The per-policy optimiser uses a linear approximation to the demand curve. For price changes beyond ±20%, the linear approximation diverges meaningfully from a logistic specification. In practice, post-PS21/5 renewal price changes are constrained by ENBP — which typically limits changes to ±15% — so the approximation error is small.
 
-# spark.createDataFrame(priced_df_pd).write.format("delta") \
-#     .mode("overwrite") \
-#     .option("overwriteSchema", "true") \
-#     .saveAsTable("pricing.motor.renewal_optimal_prices")
-
-# Write the demand curve
-demand_df_pd = demand_df.to_pandas()
-
-# spark.createDataFrame(demand_df_pd).write.format("delta") \
-#     .mode("overwrite") \
-#     .saveAsTable("pricing.motor.renewal_demand_curve")
-
-print("Tables to write:")
-print("  pricing.motor.renewal_optimal_prices  -", len(priced_df), "rows")
-print("  pricing.motor.renewal_demand_curve    -", len(demand_df), "rows")
-```
-
-The `spark.createDataFrame()` calls are commented out because the synthetic data is not in a real Unity Catalog. In your production environment, uncomment them and replace the table names with your actual schema.
+The more significant limitation is the per-row observed renewal indicator as the P₀ baseline. Each customer's observed renewal is a single binary outcome, not a probability. The optimiser smooths it toward the portfolio mean (20% weight), but noisy baselines do reduce optimisation precision for customers at the extremes of the renewal distribution. With enough data, a neighbourhood estimate of P₀ (e.g., k-nearest-neighbours renewal rate in feature space) would improve this.

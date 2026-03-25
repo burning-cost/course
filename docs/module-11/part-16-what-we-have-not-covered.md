@@ -8,7 +8,7 @@ We focused entirely on frequency. Severity monitoring uses the same tools (A/E r
 
 **Claims development.** Severity in motor is not finalised at notification. A bodily injury claim notified in month 1 may still be paying in year 5. Monitoring severity on incurred-to-date values understates the true severity for recent accident years. A development factor adjustment is needed before computing A/E on severity. This requires IBNR methodology that is beyond the scope of this module.
 
-**Exposure measurement for severity.** The A/E denominator for severity is the predicted severity given a claim, not the claim count. The "exposure" for each claim is 1 claim, not the policy exposure in years. The `AERatio` class handles this correctly when you pass `exposure=None` (each observation has unit exposure), but the interpretation changes.
+**Exposure measurement for severity.** The A/E denominator for severity is the predicted severity given a claim, not the claim count. The "exposure" for each claim is 1 claim, not the policy exposure in years. The `ae_ratio_ci()` function handles this correctly when you pass `exposure=None` (each observation has unit exposure), but the interpretation changes.
 
 **Outlier claims.** Severity has a heavy right tail. A single catastrophic injury claim can move portfolio-level severity A/E by 10 percentage points or more. Before concluding that elevated severity A/E represents concept drift, check whether a small number of large claims are driving the result. Standard practice is to cap claims at the 95th or 99th percentile for monitoring purposes, with the capped result reported alongside the uncapped.
 
@@ -66,7 +66,7 @@ Databricks Structured Streaming can handle this. The architecture would use Delt
 
 A common deployment pattern is champion-challenger: the champion model prices all risks; a challenger model prices a random sample (typically 5-10%) to generate live performance data before a full rollout. Monitoring a champion-challenger setup requires comparing the A/E ratios and Ginis of two models on overlapping policy populations - more complex than the single-model setup we built here.
 
-If you are running champion-challenger trials, the `GiniDrift` class can compare challenger vs champion discrimination on the same current period by treating the challenger's reference as the champion. We have not shown this explicitly, but the API supports it.
+If you are running champion-challenger trials, `gini_drift_test()` can compare challenger vs champion discrimination on the same current period by treating the challenger's reference as the champion. We have not shown this explicitly, but the API supports it.
 
 ### Threshold calibration
 

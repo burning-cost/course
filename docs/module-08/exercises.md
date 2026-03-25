@@ -1,1146 +1,834 @@
 # Module 8 Exercises: End-to-End Pricing Pipeline
 
-These exercises work through the pipeline from a different angle to the tutorial: rather than building the happy path, they explore what happens when stages are connected incorrectly, when inputs change between runs, and when the pipeline fails. By the end, you will have built a working pipeline from scratch on your own synthetic data and debugged each stage independently.
+Six exercises. Each builds on the pipeline concepts from the tutorial. Work through them in order — the first four build on each other. Exercises 5 and 6 are independent.
 
-The exercises build on each other. Exercise 1 must be completed before Exercise 2. Exercises 5 and 6 are independent and can be done in any order after Exercise 4.
+Complete worked solutions are provided inside collapsed `<details>` blocks at the end of each exercise. Read the question and attempt a solution before looking.
 
 ---
 
-## Exercise 1: The feature engineering trap -- build it once, use it everywhere
+## Exercise 1: The feature engineering trap
 
-**References:** Tutorial Parts 7 and 15.
+**What this covers:** The NCB encoding incident from Part 1, reproduced as a controlled experiment. You will cause the failure, observe its consequences, and implement the correct fix.
 
-**What this exercise covers:** The most common production failure in ML-based pricing is feature engineering defined in two places. This exercise makes you experience the failure before showing you the correct pattern.
-
-**Setup.** The following cell generates a small synthetic dataset. Run it first.
+**Setup — run this cell first:**
 
 ```python
 import polars as pl
 import numpy as np
-import pandas as pd
 from catboost import CatBoostRegressor, Pool
 
 rng = np.random.default_rng(seed=42)
-n   = 15_000
+n   = 20_000
 
 df = pl.DataFrame({
-    "ncb_years":      rng.choice([0,1,2,3,4,5], n, p=[0.08,0.07,0.10,0.15,0.20,0.40]).tolist(),
-    "vehicle_group":  rng.integers(1, 51, n).tolist(),
-    "region":         rng.choice(["North","Midlands","London","SouthEast","SouthWest"], n).tolist(),
-    "driver_age":     rng.integers(17, 85, n).tolist(),
-    "exposure":       np.clip(rng.beta(8, 2, n), 0.05, 1.0).tolist(),
-    "claim_count":    rng.poisson(0.07, n).tolist(),
-    "accident_year":  rng.choice([2021,2022,2023,2024], n).tolist(),
+    "ncb_years":     rng.choice([0,1,2,3,4,5], n, p=[0.08,0.07,0.10,0.15,0.20,0.40]).tolist(),
+    "vehicle_group": rng.integers(1, 51, n).tolist(),
+    "region":        rng.choice(["North","Midlands","London","SouthEast","SouthWest"], n).tolist(),
+    "driver_age":    rng.integers(17, 85, n).tolist(),
+    "exposure":      np.clip(rng.beta(8, 2, n), 0.05, 1.0).tolist(),
+    "accident_year": rng.choice([2022,2023,2024,2025], n).tolist(),
 })
 
-print(f"Dataset: {df.shape[0]:,} rows")
-print(df.head(5))
-```
-
-### Task 1: Reproduce the mismatch failure
-
-The training pipeline below encodes `ncb_years` as a string categorical before passing it to CatBoost. The scoring pipeline passes `ncb_years` as an integer.
-
-1a. Run the training pipeline exactly as shown. Fit a CatBoost Poisson model. Record its MLflow run ID.
-
-```python
-# TRAINING PIPELINE
-# Note: ncb_years cast to string before Pool construction
-FEATURES_TRAIN  = ["ncb_years", "vehicle_group", "region", "driver_age"]
-CAT_TRAIN       = ["region", "ncb_years"]   # ncb_years is categorical in training
-
-df_train = df.filter(pl.col("accident_year") < 2024)
-df_test  = df.filter(pl.col("accident_year") == 2024)
-
-# Training encodes ncb_years as Utf8
-df_train_enc = df_train.with_columns(pl.col("ncb_years").cast(pl.Utf8))
-df_test_enc  = df_test.with_columns(pl.col("ncb_years").cast(pl.Utf8))
-
-X_tr = df_train_enc[FEATURES_TRAIN].to_pandas()
-y_tr = df_train["claim_count"].to_numpy()
-w_tr = df_train["exposure"].to_numpy()
-
-X_te = df_test_enc[FEATURES_TRAIN].to_pandas()
-y_te = df_test["claim_count"].to_numpy()
-w_te = df_test["exposure"].to_numpy()
-
-train_pool = Pool(X_tr, y_tr, baseline=np.log(np.clip(w_tr, 1e-6, None)),
-                  cat_features=CAT_TRAIN)
-test_pool  = Pool(X_te, y_te, baseline=np.log(np.clip(w_te, 1e-6, None)),
-                  cat_features=CAT_TRAIN)
-
-model_correct = CatBoostRegressor(
-    loss_function="Poisson", iterations=200, depth=5, random_seed=42, verbose=0
+# Frequency DGP: NCD drives frequency — NCD 5 = much lower risk
+ncb_arr = np.array(df["ncb_years"].to_list())
+age_arr = np.array(df["driver_age"].to_list())
+freq    = (
+    0.08
+    * np.array([{0:2.3, 1:1.8, 2:1.4, 3:1.1, 4:0.85, 5:0.62}[x] for x in ncb_arr])
+    * (0.95 + 0.003 * np.maximum(0, 25 - age_arr))   # young driver uplift
 )
-model_correct.fit(train_pool, eval_set=test_pool)
-print("Training complete (correct encoding).")
-```
-
-1b. Now simulate the scoring pipeline mismatch: pass `ncb_years` as an integer, not a string.
-
-```python
-# SCORING PIPELINE (wrong: ncb_years as integer)
-X_te_wrong = df_test[FEATURES_TRAIN].to_pandas()   # ncb_years NOT cast to string
-w_te_wrong  = df_test["exposure"].to_numpy()
-
-# Note: cat_features only contains "region" -- ncb_years is now treated as continuous
-wrong_pool = Pool(X_te_wrong, cat_features=["region"])
-pred_wrong = model_correct.predict(wrong_pool)
-
-# Correct scoring
-pred_correct = model_correct.predict(test_pool)
-
-# Compute the prediction error
-mae = np.mean(np.abs(pred_correct - pred_wrong))
-print(f"Mean absolute prediction error from encoding mismatch: {mae:.4f} claims")
-print(f"As % of mean predicted count: {mae / pred_correct.mean():.1%}")
-print(f"Was an exception raised? No -- this is a silent failure.")
-```
-
-**Question:** Did CatBoost raise an exception? What is the magnitude of the prediction error? Is this error large enough to matter for pricing?
-
-### Task 2: Build the FeatureSpec guard
-
-Implement a `FeatureSpec` class (or use the one from Tutorial Part 15) that:
-- Records the expected dtype and unique values for each feature at training time
-- Raises a `ValueError` if the scoring data does not match the spec
-- Logs the spec JSON as an MLflow artefact alongside the trained model
-
-Requirements:
-- The spec must catch the mismatch in Task 1 before any predictions are made
-- The error message must tell the user exactly which column is wrong and what to do about it
-- The spec must be serialisable to JSON and reloadable from JSON
-
-```python
-import json
-import mlflow
-
-class FeatureSpec:
-    def __init__(self):
-        self.spec = {}
-
-    def record(self, df: pl.DataFrame, cat_features: list) -> None:
-        # Your implementation here
-        pass
-
-    def validate(self, df: pl.DataFrame) -> list:
-        # Your implementation here
-        # Return list of error strings. Empty = pass.
-        pass
-
-    def to_json(self, path: str) -> None:
-        with open(path, "w") as f:
-            json.dump(self.spec, f, indent=2)
-
-    @classmethod
-    def from_json(cls, path: str) -> "FeatureSpec":
-        obj = cls()
-        with open(path) as f:
-            obj.spec = json.load(f)
-        return obj
-
-# Test it: record on training data, validate on the wrong scoring data from Task 1
-spec = FeatureSpec()
-spec.record(df_train_enc.select(FEATURES_TRAIN), cat_features=CAT_TRAIN)
-spec.to_json("/tmp/feature_spec_ex1.json")
-
-spec_loaded = FeatureSpec.from_json("/tmp/feature_spec_ex1.json")
-
-# This should fail loudly with a clear error
-errors = spec_loaded.validate(pl.from_pandas(X_te_wrong))
-print(f"Errors found: {len(errors)}")
-for err in errors:
-    print(f"  ERROR: {err}")
-```
-
-### Task 3: The canonical fix
-
-Write a `build_feature_matrix()` function that encodes all features correctly and is called identically at training time and scoring time. Show that calling this function at both stages eliminates the mismatch from Task 1.
-
-```python
-def build_feature_matrix(
-    df: pl.DataFrame,
-    features: list,
-    cat_features: list,
-) -> tuple:
-    """
-    Single source of truth for feature engineering.
-    Returns: (X_pandas, cat_features_list)
-
-    Rules:
-    - ncb_years must always be cast to Utf8 (categorical)
-    - All other encoding must happen inside this function
-    - Never call this function with pre-encoded data
-    """
-    # Your implementation here
-    pass
-
-# Verify: training and scoring produce the same feature dtypes
-X_tr_canonical, cats = build_feature_matrix(df_train, FEATURES_TRAIN, CAT_TRAIN)
-X_te_canonical, _    = build_feature_matrix(df_test,  FEATURES_TRAIN, CAT_TRAIN)
-
-print("Training feature dtypes:")
-print(X_tr_canonical.dtypes)
-print("\nScoring feature dtypes:")
-print(X_te_canonical.dtypes)
-print("\nDtype match:", X_tr_canonical.dtypes.to_dict() == X_te_canonical.dtypes.to_dict())
-```
-
-**Expected output:** Both dtype dictionaries should be identical.
-
-<details>
-<summary>Solution -- Task 2 FeatureSpec</summary>
-
-```python
-class FeatureSpec:
-    def __init__(self):
-        self.spec = {}
-
-    def record(self, df: pl.DataFrame, cat_features: list) -> None:
-        for col in df.columns:
-            series = df[col]
-            if col in cat_features or series.dtype in (pl.Utf8, pl.Categorical):
-                self.spec[col] = {
-                    "dtype":       "categorical",
-                    "unique_vals": sorted(
-                        [str(v) for v in series.drop_nulls().unique().to_list()]
-                    ),
-                }
-            else:
-                self.spec[col] = {
-                    "dtype": "numeric",
-                    "min":   float(series.min()),
-                    "max":   float(series.max()),
-                }
-
-    def validate(self, df: pl.DataFrame) -> list:
-        errors = []
-        for col, col_spec in self.spec.items():
-            if col not in df.columns:
-                errors.append(
-                    f"Missing column '{col}'. Required columns: {list(self.spec.keys())}"
-                )
-                continue
-            series = df[col]
-            if col_spec["dtype"] == "categorical":
-                if series.dtype not in (pl.Utf8, pl.Categorical, pl.Enum):
-                    errors.append(
-                        f"Column '{col}': expected categorical dtype (pl.Utf8 or pl.Categorical), "
-                        f"got {series.dtype}. Cast with: pl.col('{col}').cast(pl.Utf8)"
-                    )
-            else:  # numeric
-                if series.dtype in (pl.Utf8, pl.Categorical, pl.Enum):
-                    errors.append(
-                        f"Column '{col}': expected numeric dtype, got {series.dtype}."
-                    )
-        return errors
-```
-
-</details>
-
-<details>
-<summary>Solution -- Task 3 canonical function</summary>
-
-```python
-def build_feature_matrix(
-    df: pl.DataFrame,
-    features: list,
-    cat_features: list,
-) -> tuple:
-    # Apply all categorical casts
-    df_enc = df.with_columns([
-        pl.col(col).cast(pl.Utf8) if col in cat_features else pl.col(col)
-        for col in features
-    ])
-    X = df_enc.select(features).to_pandas()
-    return X, cat_features
-```
-
-</details>
-
----
-
-## Exercise 2: The Poisson offset -- weight vs baseline
-
-**References:** Tutorial Parts 2 and 8.
-
-**What this exercise covers:** The difference between `weight=exposure` and `baseline=np.log(exposure)` in CatBoost. This is the blocking issue from the head of pricing review.
-
-**Setup.** Generate a simple dataset where you know the true claim frequency.
-
-```python
-rng2 = np.random.default_rng(seed=100)
-n2   = 20_000
-
-exposure2     = rng2.uniform(0.1, 1.0, n2)
-true_freq2    = 0.08 * np.exp(0.3 * (exposure2 - 0.55))   # mild exposure effect
-claim_count2  = rng2.poisson(true_freq2 * exposure2)
-
-df2 = pd.DataFrame({
-    "exposure":    exposure2,
-    "claim_count": claim_count2,
-    "feature":     rng2.normal(0, 1, n2),
-})
-
-n_train2, n_test2 = int(n2 * 0.8), int(n2 * 0.2)
-X_tr2 = df2[["feature", "exposure"]].iloc[:n_train2]
-y_tr2 = df2["claim_count"].values[:n_train2]
-w_tr2 = df2["exposure"].values[:n_train2]
-
-X_te2 = df2[["feature"]].iloc[n_train2:]
-y_te2 = df2["claim_count"].values[n_train2:]
-w_te2 = df2["exposure"].values[n_train2:]
-
-print(f"True mean frequency: {true_freq2.mean():.4f}")
-print(f"Observed mean frequency: {(claim_count2.sum() / exposure2.sum()):.4f}")
-```
-
-### Task 1: Fit both versions
-
-Fit two models:
-- Model A: `weight=w_tr2` (wrong -- this is the Module 8 bug)
-- Model B: `baseline=np.log(w_tr2)` (correct -- exposure offset)
-
-Both models should use only `"feature"` as the input feature, with `"exposure"` handled via the Pool parameter.
-
-```python
-# Model A: wrong offset (weight, not baseline)
-pool_A_train = Pool(X_tr2[["feature"]], y_tr2, weight=w_tr2)
-pool_A_test  = Pool(X_te2,              y_te2, weight=w_te2)
-
-model_A = CatBoostRegressor(
-    loss_function="Poisson", iterations=200, depth=4, random_seed=42, verbose=0
+df = df.with_columns(
+    pl.Series("claim_count", rng.poisson(freq))
 )
-model_A.fit(pool_A_train, eval_set=pool_A_test)
-
-# Model B: correct offset (baseline=log(exposure))
-pool_B_train = Pool(X_tr2[["feature"]], y_tr2,
-                    baseline=np.log(np.clip(w_tr2, 1e-6, None)))
-pool_B_test  = Pool(X_te2,              y_te2,
-                    baseline=np.log(np.clip(w_te2, 1e-6, None)))
-
-model_B = CatBoostRegressor(
-    loss_function="Poisson", iterations=200, depth=4, random_seed=42, verbose=0
-)
-model_B.fit(pool_B_train, eval_set=pool_B_test)
+print(f"Portfolio freq: {df['claim_count'].sum() / df['exposure'].sum():.4f}")
+print(f"NCD 0 freq:  {df.filter(pl.col('ncb_years')==0)['claim_count'].sum() / df.filter(pl.col('ncb_years')==0)['exposure'].sum():.4f}")
+print(f"NCD 5 freq:  {df.filter(pl.col('ncb_years')==5)['claim_count'].sum() / df.filter(pl.col('ncb_years')==5)['exposure'].sum():.4f}")
 ```
 
-### Task 2: Compare predictions
-
-For a policy with exposure = 1.0 year, Model A and Model B should give the same prediction. For exposure = 0.5 years, they should differ. Why?
+**Part A.** The TRAINING pipeline encodes NCB as a string. The SCORING pipeline passes NCB as an integer. Write both, train the model on 2022-2024, score on 2025, and compare the mean predicted frequency for NCD 0 vs NCD 5 under both encodings. What do you observe?
 
 ```python
-# Evaluate both models on the test set
-# For Model A: predictions are on the count scale (no exposure offset in output)
-pred_A = model_A.predict(Pool(X_te2))
-
-# For Model B: predictions include the exposure offset
-pred_B = model_B.predict(pool_B_test)
-
-# What does each model predict for a full-year policy (exposure=1.0)?
-# What does it predict for a half-year policy (exposure=0.5)?
-# Your analysis here:
-
-print("Predicted claims, full-year policies (exposure=1.0 in test):")
-full_year_mask = (w_te2 > 0.95) & (w_te2 < 1.05)
-print(f"  Model A (wrong): mean = {pred_A[full_year_mask].mean():.4f}")
-print(f"  Model B (correct): mean = {pred_B[full_year_mask].mean():.4f}")
-
-print("\nPredicted claims, half-year policies (exposure ~0.5):")
-half_year_mask = (w_te2 > 0.45) & (w_te2 < 0.55)
-print(f"  Model A (wrong): mean = {pred_A[half_year_mask].mean():.4f}")
-print(f"  Model B (correct): mean = {pred_B[half_year_mask].mean():.4f}")
-
-print("\nExpected ratio (half-year should predict roughly half the count):")
-print(f"  Model A ratio: {pred_A[half_year_mask].mean() / pred_A[full_year_mask].mean():.3f}")
-print(f"  Model B ratio: {pred_B[half_year_mask].mean() / pred_B[full_year_mask].mean():.3f}")
-```
-
-### Task 3: Compute the Poisson deviance for both models
-
-Use the `poisson_deviance()` function from Tutorial Part 8. Which model achieves lower deviance on the test set?
-
-```python
-def poisson_deviance(y_true, y_pred, exposure):
-    fp = np.clip(y_pred / exposure, 1e-10, None)
-    ft = y_true / exposure
-    d  = 2 * exposure * (np.where(ft > 0, ft * np.log(ft / fp), 0.0) - (ft - fp))
-    return float(d.sum() / exposure.sum())
-
-dev_A = poisson_deviance(y_te2, pred_A, w_te2)
-dev_B = poisson_deviance(y_te2, pred_B, w_te2)
-
-print(f"Model A (weight=exposure) Poisson deviance: {dev_A:.5f}")
-print(f"Model B (baseline=log_exp) Poisson deviance: {dev_B:.5f}")
-print(f"Relative difference: {(dev_A - dev_B) / dev_B:.1%}")
-```
-
-**Expected finding:** Model B should achieve lower Poisson deviance because it correctly models the exposure structure. Model A produces the same prediction for a 0.5-year policy and a 1.0-year policy with the same feature values -- it treats both as if they have the same expected claim count, which is wrong.
-
-### Task 4: Explain to a non-technical colleague
-
-Write a three-sentence explanation of the difference between `weight` and `baseline` in CatBoost that would be understood by a pricing actuary who has never used gradient boosting. Your answer should cover: what each parameter does, which is correct for a Poisson frequency model, and what goes wrong when you use the wrong one.
-
----
-
-## Exercise 3: Walk-forward CV -- understanding temporal structure
-
-**References:** Tutorial Part 8.
-
-**What this exercise covers:** Walk-forward cross-validation and why a random split produces misleading validation metrics.
-
-**Setup.**
-
-```python
-import polars as pl
-import numpy as np
-from catboost import CatBoostRegressor, Pool
-from sklearn.model_selection import train_test_split
-
-rng3 = np.random.default_rng(seed=333)
-n3   = 60_000
-
-# Simulate a portfolio with a genuine time trend:
-# claim frequency increases by 3% per year (loss cost trend)
-accident_year3 = rng3.choice([2020,2021,2022,2023,2024], n3)
-time_trend     = 0.03 * (accident_year3 - 2020)   # 0 in 2020, 0.12 in 2024
-
-ncb3     = rng3.choice([0,1,2,3,4,5], n3)
-exposure3 = np.clip(rng3.beta(8, 2, n3), 0.1, 1.0)
-true_freq3 = np.exp(-2.9 - 0.18*ncb3 + time_trend)
-claims3   = rng3.poisson(true_freq3 * exposure3)
-
-df3 = pl.DataFrame({
-    "accident_year": accident_year3.tolist(),
-    "ncb_years":     ncb3.tolist(),
-    "exposure":      exposure3.tolist(),
-    "claim_count":   claims3.tolist(),
-})
-
-print("Observed claim frequency by accident year:")
-print(df3.group_by("accident_year").agg(
-    pl.col("claim_count").sum().alias("claims"),
-    pl.col("exposure").sum().alias("exposure"),
-).sort("accident_year").with_columns(
-    (pl.col("claims") / pl.col("exposure")).round(5).alias("freq")
-))
-```
-
-### Task 1: Random split vs temporal split -- compare validation metrics
-
-Fit the same CatBoost Poisson model using two different validation strategies:
-- Random 80/20 split (wrong for insurance)
-- Temporal split: train on 2020-2023, test on 2024 (correct)
-
-Use the Poisson deviance as the evaluation metric. Report the validation deviance for each approach.
-
-```python
-FEATURES3 = ["ncb_years"]
-
-df3_pd = df3.to_pandas()
-
-# --- Random split ---
-X_rand, y_rand, w_rand = (
-    df3_pd[FEATURES3], df3_pd["claim_count"].values, df3_pd["exposure"].values
-)
-X_rand_tr, X_rand_te, y_rand_tr, y_rand_te, w_rand_tr, w_rand_te = train_test_split(
-    X_rand, y_rand, w_rand, test_size=0.2, random_state=42
-)
-
-pool_rand_tr = Pool(X_rand_tr, y_rand_tr,
-                    baseline=np.log(np.clip(w_rand_tr, 1e-6, None)))
-pool_rand_te = Pool(X_rand_te, y_rand_te,
-                    baseline=np.log(np.clip(w_rand_te, 1e-6, None)))
-
-model_rand = CatBoostRegressor(
-    loss_function="Poisson", iterations=200, depth=4, random_seed=42, verbose=0
-)
-model_rand.fit(pool_rand_tr, eval_set=pool_rand_te)
-pred_rand = model_rand.predict(pool_rand_te)
-dev_rand  = poisson_deviance(y_rand_te, pred_rand, w_rand_te)
-
-# --- Temporal split ---
-mask_tr3 = df3_pd["accident_year"] < 2024
-mask_te3 = df3_pd["accident_year"] == 2024
-
-X_temp_tr = df3_pd.loc[mask_tr3, FEATURES3]
-y_temp_tr = df3_pd.loc[mask_tr3, "claim_count"].values
-w_temp_tr = df3_pd.loc[mask_tr3, "exposure"].values
-
-X_temp_te = df3_pd.loc[mask_te3, FEATURES3]
-y_temp_te = df3_pd.loc[mask_te3, "claim_count"].values
-w_temp_te = df3_pd.loc[mask_te3, "exposure"].values
-
-pool_temp_tr = Pool(X_temp_tr, y_temp_tr,
-                    baseline=np.log(np.clip(w_temp_tr, 1e-6, None)))
-pool_temp_te = Pool(X_temp_te, y_temp_te,
-                    baseline=np.log(np.clip(w_temp_te, 1e-6, None)))
-
-model_temp = CatBoostRegressor(
-    loss_function="Poisson", iterations=200, depth=4, random_seed=42, verbose=0
-)
-model_temp.fit(pool_temp_tr, eval_set=pool_temp_te)
-pred_temp = model_temp.predict(pool_temp_te)
-dev_temp  = poisson_deviance(y_temp_te, pred_temp, w_temp_te)
-
-print(f"Random split validation deviance:   {dev_rand:.5f}")
-print(f"Temporal split validation deviance: {dev_temp:.5f}")
-print(f"\nThe random split deviance is {'lower' if dev_rand < dev_temp else 'higher'}, "
-      f"by {abs(dev_rand - dev_temp):.5f}.")
-print("If random split deviance is lower, the model appears to perform better")
-print("than it actually does on future data. This is the validation inflation bias.")
-```
-
-### Task 2: Measure the bias in practice
-
-The random split includes 2024 observations in training (20% of 2024 rows appear in the training set in a random split). This means the model has seen some 2024 data during training, which makes validation on the remaining 2024 rows look better than it really is.
-
-Quantify this bias: what is the difference between the validation deviance under each approach? Is it large enough to matter for a pricing decision?
-
-### Task 3: IBNR buffer
-
-Add an IBNR buffer to the temporal split: remove the last three months of each training year from the training set (simulate by removing 25% of each training year's rows, sampling from those with the highest policy IDs as a proxy for late-year policies).
-
-Does the IBNR buffer change the validation deviance materially on this synthetic data? Why or why not?
-
----
-
-## Exercise 4: Severity prediction -- all policies, not just claims
-
-**References:** Tutorial Part 10 (Stage 6, "Computing pure premiums").
-
-**What this exercise covers:** The severity imputation bug: filling zero-claim policies with the claims-only mean severity overestimates pure premium for low-risk policies.
-
-**Setup.**
-
-```python
-rng4 = np.random.default_rng(seed=444)
-n4   = 30_000
-
-# Risk factor: low risk (risk=0) has lower frequency AND lower severity
-# High risk (risk=1) has higher frequency AND higher severity
-risk4      = rng4.choice([0, 1], n4, p=[0.70, 0.30])
-exposure4  = np.clip(rng4.beta(8, 2, n4), 0.1, 1.0)
-true_freq4 = np.where(risk4 == 0, 0.04, 0.14)   # low risk = 4%, high risk = 14%
-claims4    = rng4.poisson(true_freq4 * exposure4)
-
-# Severity: low risk has lower mean severity
-true_mean_sev4 = np.where(risk4 == 0, 1_800, 4_200)
-severity4 = np.where(
-    claims4 > 0,
-    rng4.lognormal(np.log(true_mean_sev4), 0.8, n4),
-    0.0
-)
-incurred4 = claims4 * severity4 / np.maximum(claims4, 1)  # mean severity per claim
-incurred4 = np.where(claims4 > 0, incurred4, 0.0)
-
-FEATURES4 = ["risk"]
-df4 = pd.DataFrame({
-    "risk":         risk4, "exposure": exposure4,
-    "claim_count":  claims4, "incurred_loss": severity4 * claims4,
-})
-
-print(f"Zero-claim policies: {(claims4 == 0).sum():,}  ({(claims4 == 0).mean():.1%})")
-print(f"Claims-only mean severity: £{severity4[claims4 > 0].mean():,.0f}")
-print(f"True mean severity (all risks): £{true_mean_sev4.mean():,.0f}")
-print(f"True low-risk mean severity:    £{true_mean_sev4[risk4==0].mean():,.0f}")
-print(f"True high-risk mean severity:   £{true_mean_sev4[risk4==1].mean():,.0f}")
-```
-
-### Task 1: Fit the severity model on claims-only
-
-Fit a CatBoost Gamma model on the claims-only subset. Predict severity for the claims-only test set.
-
-```python
-# Train/test split: temporal (use risk as year proxy for simplicity)
-train_mask4 = rng4.choice([True, False], n4, p=[0.75, 0.25])
-df4_train   = df4[train_mask4]
-df4_test    = df4[~train_mask4]
-
-# Claims-only training set
-df4_train_claims = df4_train[df4_train["claim_count"] > 0].copy()
-df4_train_claims["mean_sev"] = (
-    df4_train_claims["incurred_loss"] / df4_train_claims["claim_count"]
-)
-
-X_sev_tr4 = df4_train_claims[FEATURES4]
-y_sev_tr4 = df4_train_claims["mean_sev"].values
-
-sev_pool4 = Pool(X_sev_tr4, y_sev_tr4)
-sev_model4 = CatBoostRegressor(
-    loss_function="Tweedie:variance_power=2",
-    iterations=200, depth=4, random_seed=42, verbose=0
-)
-sev_model4.fit(sev_pool4)
-print("Severity model fitted.")
-```
-
-### Task 2: Three approaches to severity imputation
-
-For the test set, compute the pure premium three ways:
-
-**Approach A (the bug):** Predict severity for claims-only policies. Fill zero-claim policies with `sev_pred_claims_only.mean()`.
-
-**Approach B (the fix):** Predict severity for ALL test policies (not just those with claims).
-
-**Approach C (the oracle):** Use the true severity values from the data generating process.
-
-```python
-df4_test_claims = df4_test[df4_test["claim_count"] > 0].copy()
-df4_test_claims["mean_sev"] = (
-    df4_test_claims["incurred_loss"] / df4_test_claims["claim_count"]
-)
-
-# Approach A: claims-only prediction, fill others with claims-only mean
-pred_claims_only4 = sev_model4.predict(Pool(df4_test_claims[FEATURES4]))
-claims_only_mean4 = pred_claims_only4.mean()
-
-# Build full test predictions (imputed)
-sev_pred_A = np.where(
-    df4_test["claim_count"].values > 0,
-    sev_model4.predict(Pool(df4_test[FEATURES4])),  # will be same as pred_claims_only4 for those with claims
-    claims_only_mean4  # impute with claims-only mean -- this is the bug
-)
-
-# Approach B: predict for all policies
-sev_pred_B = sev_model4.predict(Pool(df4_test[FEATURES4]))
-
-# Approach C: oracle
-sev_oracle4 = true_mean_sev4[~train_mask4]
-
-# Pure premium = frequency prediction * severity prediction
-# For simplicity, use the true frequency here to isolate the severity effect
-freq_pred4 = true_freq4[~train_mask4]
-
-pp_A = freq_pred4 * sev_pred_A
-pp_B = freq_pred4 * sev_pred_B
-pp_C = freq_pred4 * sev_oracle4
-
-# Compare by risk group
-risk_test4 = risk4[~train_mask4]
-print("Mean pure premium by risk group:")
-print(f"{'Group':<12} {'Approach A (bug)':>18} {'Approach B (fix)':>18} {'Oracle':>12}")
-for r, label in [(0, "Low risk"), (1, "High risk")]:
-    mask_r = risk_test4 == r
-    print(f"{label:<12} "
-          f"£{pp_A[mask_r].mean():>16,.2f} "
-          f"£{pp_B[mask_r].mean():>16,.2f} "
-          f"£{pp_C[mask_r].mean():>10,.2f}")
-```
-
-### Task 3: Quantify the bias
-
-For the low-risk group (most likely to have zero claims), Approach A should produce a higher mean pure premium than Approach B. This is the upward bias from the claims-only imputation.
-
-- By what percentage does Approach A overstate the pure premium for low-risk policies?
-- By what percentage does it understate for high-risk policies?
-- How would this bias affect the rate optimiser's output?
-
-### Task 4: Portfolio-level loss ratio impact
-
-Compute the model-estimated loss ratio under Approaches A and B. Use the test set's actual incurred losses as the numerator. If the book is currently charged at 1.2x the technical premium, how does the difference between A and B affect the estimated LR?
-
----
-
-## Exercise 5: Conformal calibration -- temporal vs random split
-
-**References:** Tutorial Part 12.
-
-**What this exercise covers:** Why the conformal calibration split must be temporal, and how to measure the impact of using a random split.
-
-**Setup.**
-
-```python
-from insurance_conformal import InsuranceConformalPredictor
-import polars as pl
-import numpy as np
-from catboost import CatBoostRegressor, Pool
-
-rng5 = np.random.default_rng(seed=555)
-n5   = 40_000
-
-# Simulate severity with a time trend: claims inflate 5% per year
-accident_year5 = rng5.choice([2021,2022,2023,2024], n5)
-inflation_mult = (1.05 ** (accident_year5 - 2021))
-
-vehicle_group5 = rng5.integers(1, 51, n5)
-exposure5      = np.clip(rng5.beta(8, 2, n5), 0.1, 1.0)
-freq5          = 0.07 * np.exp(0.01 * vehicle_group5)
-claims5        = rng5.poisson(freq5 * exposure5)
-
-true_mean_sev5 = 2_500 * inflation_mult * (1 + 0.008 * vehicle_group5)
-severity5      = np.where(
-    claims5 > 0,
-    rng5.lognormal(np.log(true_mean_sev5), 0.8, n5),
-    0.0,
-)
-incurred5 = np.where(claims5 > 0, severity5, 0.0)
-
-df5 = pl.DataFrame({
-    "accident_year": accident_year5.tolist(),
-    "vehicle_group": vehicle_group5.tolist(),
-    "exposure":      exposure5.tolist(),
-    "claim_count":   claims5.tolist(),
-    "incurred_loss": incurred5.tolist(),
-})
-
-print("Observed mean severity by accident year (inflating):")
-df5_claims = df5.filter(pl.col("claim_count") > 0)
-print(df5_claims.group_by("accident_year").agg(
-    pl.col("incurred_loss").mean().round(0).alias("mean_sev")
-).sort("accident_year"))
-```
-
-### Task 1: Fit the severity model
-
-Train a CatBoost Gamma model on accident years 2021-2022 (claims only). This represents the model from the previous rate review.
-
-```python
-FEATURES5 = ["vehicle_group"]
-
-df5_pd = df5.to_pandas()
-df5_train = df5_pd[(df5_pd["accident_year"] <= 2022) & (df5_pd["claim_count"] > 0)].copy()
-df5_test  = df5_pd[(df5_pd["accident_year"] == 2024) & (df5_pd["claim_count"] > 0)].copy()
-
-df5_train["mean_sev"] = df5_train["incurred_loss"] / df5_train["claim_count"]
-df5_test["mean_sev"]  = df5_test["incurred_loss"]  / df5_test["claim_count"]
-
-sev_pool5 = Pool(df5_train[FEATURES5], df5_train["mean_sev"].values)
-sev_model5 = CatBoostRegressor(
-    loss_function="Tweedie:variance_power=2",
-    iterations=200, depth=4, random_seed=42, verbose=0
-)
-sev_model5.fit(sev_pool5)
-print("Severity model fitted on 2021-2022 claims.")
-```
-
-### Task 2: Random vs temporal calibration split
-
-Calibrate two conformal predictors:
-
-**Predictor A (wrong):** Random 80/20 split of all available data after 2022 for calibration.
-
-**Predictor B (correct):** Temporal split -- use 2023 claims for calibration, 2024 for test.
-
-```python
-df5_post_train = df5_pd[(df5_pd["accident_year"] > 2022) & (df5_pd["claim_count"] > 0)].copy()
-df5_post_train["mean_sev"] = (
-    df5_post_train["incurred_loss"] / df5_post_train["claim_count"]
-)
-
-# Predictor A: random calibration split
-from sklearn.model_selection import train_test_split
-cal_rand, test_rand = train_test_split(df5_post_train, test_size=0.5, random_state=42)
-
-cp_A = InsuranceConformalPredictor(
-    model=sev_model5, nonconformity="pearson_weighted",
-    distribution="tweedie", tweedie_power=2.0,
-)
-cp_A.calibrate(cal_rand[FEATURES5], cal_rand["mean_sev"].values)
-
-# Predictor B: temporal calibration split
-df5_cal_b  = df5_pd[(df5_pd["accident_year"] == 2023) & (df5_pd["claim_count"] > 0)].copy()
-df5_test_b = df5_pd[(df5_pd["accident_year"] == 2024) & (df5_pd["claim_count"] > 0)].copy()
-df5_cal_b["mean_sev"]  = df5_cal_b["incurred_loss"]  / df5_cal_b["claim_count"]
-df5_test_b["mean_sev"] = df5_test_b["incurred_loss"] / df5_test_b["claim_count"]
-
-cp_B = InsuranceConformalPredictor(
-    model=sev_model5, nonconformity="pearson_weighted",
-    distribution="tweedie", tweedie_power=2.0,
-)
-cp_B.calibrate(df5_cal_b[FEATURES5], df5_cal_b["mean_sev"].values)
-```
-
-### Task 3: Compare coverage diagnostics
-
-For both predictors, validate coverage on the 2024 test set. What does the coverage-by-decile diagnostic show for each? Which predictor is better calibrated?
-
-```python
-X_te5 = df5_test_b[FEATURES5]
-y_te5 = df5_test_b["mean_sev"].values
-
-diag_A = cp_A.coverage_by_decile(X_te5, y_te5, alpha=0.10)
-diag_B = cp_B.coverage_by_decile(X_te5, y_te5, alpha=0.10)
-
-print("Coverage by decile -- Predictor A (random split):")
-print(diag_A[["decile", "coverage"]])
-
-print("\nCoverage by decile -- Predictor B (temporal split):")
-print(diag_B[["decile", "coverage"]])
-
-min_cov_A = float(diag_A["coverage"].min())
-min_cov_B = float(diag_B["coverage"].min())
-
-print(f"\nMin decile coverage -- A: {min_cov_A:.3f}  B: {min_cov_B:.3f}")
-print("Conclusion:")
-if min_cov_B > min_cov_A:
-    print("  Temporal split (B) achieves better coverage on the 2024 test set.")
-    print("  The random split (A) uses some 2024 data in calibration, artificially")
-    print("  improving apparent coverage. On genuinely unseen 2024 data, it fails more.")
-else:
-    print("  For this dataset, the difference is small -- but the principle holds.")
-    print("  On a dataset with stronger time trends, the gap would be larger.")
-```
-
-### Task 4: Stretch -- what happens when the inflation rate changes?
-
-Modify the data generating process to use a 10% per year inflation rate (instead of 5%). Re-run the calibration and coverage check. At what inflation rate does the temporal calibration split also fail to maintain 85% minimum coverage? What does this imply for recalibration frequency?
-
----
-
-## Exercise 6: The audit record -- build a reproducibility test
-
-**References:** Tutorial Parts 14 and 15.
-
-**What this exercise covers:** Verifying that the audit record enables exact reproduction of a historical pipeline run.
-
-### Task 1: Run the pipeline and record the audit
-
-This task asks you to run a miniature version of the full pipeline (simplified for speed) and write an audit record.
-
-```python
-import polars as pl
-import numpy as np
-import pandas as pd
-import json
-import mlflow
-import mlflow.catboost
-from catboost import CatBoostRegressor, Pool
-from datetime import date
-
-# ---- Miniature pipeline ----
-
-# Generate data
-rng6 = np.random.default_rng(seed=2026)
-n6   = 10_000
-
-df6 = pl.DataFrame({
-    "ncb_years":    rng6.choice([0,1,2,3,4,5], n6).tolist(),
-    "exposure":     np.clip(rng6.beta(8, 2, n6), 0.05, 1.0).tolist(),
-    "claim_count":  rng6.poisson(0.07, n6).tolist(),
-    "accident_year": rng6.choice([2021,2022,2023,2024], n6).tolist(),
-})
-
-FEATURES6 = ["ncb_years"]
-CAT6      = []
-
-# Write to Delta
-spark.createDataFrame(df6.to_pandas()) \
-    .write.format("delta") \
-    .mode("overwrite") \
-    .option("overwriteSchema","true") \
-    .saveAsTable("main.motor_q2_2026.mini_raw")
-
-v_raw6 = spark.sql(
-    "DESCRIBE HISTORY main.motor_q2_2026.mini_raw LIMIT 1"
-).collect()[0]["version"]
-
-# Split and train
-df6_pd   = df6.to_pandas()
-train6   = df6_pd[df6_pd["accident_year"] < 2024]
-test6    = df6_pd[df6_pd["accident_year"] == 2024]
-
-pool_tr6 = Pool(train6[FEATURES6], train6["claim_count"].values,
-                baseline=np.log(np.clip(train6["exposure"].values, 1e-6, None)))
-pool_te6 = Pool(test6[FEATURES6], test6["claim_count"].values,
-                baseline=np.log(np.clip(test6["exposure"].values, 1e-6, None)))
-
-with mlflow.start_run(run_name="mini_pipeline_ex6") as run6:
-    model6 = CatBoostRegressor(
-        loss_function="Poisson", iterations=150, depth=4, random_seed=42, verbose=0
+# Training pipeline (correct encoding — CatBoost sees NCB as categorical)
+def training_features(df: pl.DataFrame) -> pl.DataFrame:
+    return df.with_columns(
+        pl.col("ncb_years").cast(pl.Utf8).alias("ncb_encoded")
     )
-    model6.fit(pool_tr6, eval_set=pool_te6)
-    pred6  = model6.predict(pool_te6)
-    dev6   = poisson_deviance(test6["claim_count"].values, pred6,
-                               test6["exposure"].values)
-    mlflow.log_metric("test_deviance", dev6)
-    mlflow.log_param("raw_table_version", int(v_raw6))
-    mlflow.catboost.log_model(model6, "model6")
-    run_id6 = run6.info.run_id
 
-audit6 = {
-    "run_date":           str(date.today()),
-    "raw_table":          "main.motor_q2_2026.mini_raw",
-    "raw_table_version":  int(v_raw6),
-    "model_run_id":       run_id6,
-    "n_train":            len(train6),
-    "n_test":             len(test6),
-    "test_deviance":      round(dev6, 5),
-    "features":           json.dumps(FEATURES6),
-}
-print("Audit record:")
-print(json.dumps(audit6, indent=2))
+# Scoring pipeline (wrong encoding — CatBoost sees NCB as continuous integer)
+def scoring_features(df: pl.DataFrame) -> pl.DataFrame:
+    return df.with_columns(
+        pl.col("ncb_years").cast(pl.Int32).alias("ncb_encoded")
+    )
+
+FEATURE_COLS = ["ncb_encoded", "vehicle_group", "driver_age"]
+CAT_FEAT_TRAINING = ["ncb_encoded"]
+CAT_FEAT_SCORING  = []   # integer — no categorical features
+
+df_pd = df.to_pandas()
+train_pd = df_pd[df_pd["accident_year"] < 2025]
+test_pd  = df_pd[df_pd["accident_year"] == 2025]
+
+# TODO: complete the training and scoring, compute mean freq by NCD group, compare
 ```
 
-### Task 2: Simulate a data correction
+**Part B.** Implement the fix: a single `apply_features()` function called identically in both pipelines. Verify that the NCD-0 and NCD-5 predictions are now consistent between training-time scoring and scoring-time scoring.
 
-Add 500 synthetic corrections to the raw data -- modify the claim counts for 500 randomly selected policies.
+**Part C.** Add a `FeatureSpec` that would have caught the integer-vs-string divergence automatically. Write the validation code and show the error message it produces when applied to integer-encoded NCB data.
+
+<details>
+<summary>Solution</summary>
+
+**Part A:**
 
 ```python
-rng6b = np.random.default_rng(seed=9999)
-correction_idx = rng6b.choice(n6, 500, replace=False)
+# Training pipeline
+train_feats = training_features(pl.from_pandas(train_pd)).to_pandas()
+test_feats_wrong = scoring_features(pl.from_pandas(test_pd)).to_pandas()
 
-df6_corrected = df6.to_pandas()
-df6_corrected.loc[correction_idx, "claim_count"] = (
-    df6_corrected.loc[correction_idx, "claim_count"] + rng6b.integers(0, 3, 500)
-).clip(lower=0)
+train_pool = Pool(
+    train_feats[FEATURE_COLS], train_feats["claim_count"].values,
+    baseline=np.log(np.clip(train_feats["exposure"].values, 1e-6, None)),
+    cat_features=CAT_FEAT_TRAINING,
+)
+model_trained = CatBoostRegressor(
+    loss_function="Poisson", iterations=200, depth=4,
+    learning_rate=0.08, random_seed=42, verbose=0,
+)
+model_trained.fit(train_pool)
 
-spark.createDataFrame(df6_corrected) \
-    .write.format("delta") \
-    .mode("overwrite") \
-    .option("overwriteSchema","true") \
-    .saveAsTable("main.motor_q2_2026.mini_raw")
+# Scoring with wrong encoding (integer, no cat features)
+wrong_pool = Pool(
+    test_feats_wrong[FEATURE_COLS],
+    baseline=np.log(np.clip(test_pd["exposure"].values, 1e-6, None)),
+    cat_features=CAT_FEAT_SCORING,  # empty — integer encoding
+)
+pred_wrong = model_trained.predict(wrong_pool) / test_pd["exposure"].values
 
-v_raw6_after = spark.sql(
-    "DESCRIBE HISTORY main.motor_q2_2026.mini_raw LIMIT 1"
-).collect()[0]["version"]
+# Scoring with correct encoding (string, cat feature)
+test_feats_correct = training_features(pl.from_pandas(test_pd)).to_pandas()
+correct_pool = Pool(
+    test_feats_correct[FEATURE_COLS],
+    baseline=np.log(np.clip(test_pd["exposure"].values, 1e-6, None)),
+    cat_features=CAT_FEAT_TRAINING,
+)
+pred_correct = model_trained.predict(correct_pool) / test_pd["exposure"].values
 
-print(f"Original version: {v_raw6}")
-print(f"After correction: {v_raw6_after}")
+# Compare NCD 0 vs NCD 5 under both encodings
+test_ncb = test_pd["ncb_years"].values
+for ncd in [0, 5]:
+    mask = test_ncb == ncd
+    print(f"NCD {ncd} | Wrong encoding: {pred_wrong[mask].mean():.4f} | "
+          f"Correct encoding: {pred_correct[mask].mean():.4f}")
+
+# You will see: wrong encoding collapses the NCD 0/5 distinction.
+# CatBoost treats integer NCB as a continuous variable and the model
+# cannot apply the learned categorical structure to unseen integer inputs.
+# The discrimination between NCD 0 and NCD 5 is severely degraded.
 ```
 
-### Task 3: Reproduce the original pipeline output
-
-Using only the audit record from Task 1, reproduce the original model output. Verify that the test deviance matches the logged deviance exactly.
+**Part B:**
 
 ```python
-# Step 1: Read the data at the logged version
-original_data = spark.read.format("delta") \
-    .option("versionAsOf", audit6["raw_table_version"]) \
-    .table(audit6["raw_table"]) \
-    .toPandas()
+def apply_features(df: pl.DataFrame) -> pl.DataFrame:
+    """Single function. Call identically at training and scoring time."""
+    return df.with_columns(
+        pl.col("ncb_years").cast(pl.Utf8).alias("ncb_encoded")
+    )
 
-print(f"Reproduced data rows: {len(original_data):,}")
-print(f"Original n_train + n_test: {audit6['n_train'] + audit6['n_test']:,}")
+FEATURE_COLS_SHARED = ["ncb_encoded", "vehicle_group", "driver_age"]
+CAT_FEATURES_SHARED = ["ncb_encoded"]
 
-# Step 2: Load the original model from MLflow
-original_model = mlflow.catboost.load_model(
-    f"runs:/{audit6['model_run_id']}/model6"
+# Training
+train_shared = apply_features(pl.from_pandas(train_pd)).to_pandas()
+train_pool_shared = Pool(
+    train_shared[FEATURE_COLS_SHARED], train_shared["claim_count"].values,
+    baseline=np.log(np.clip(train_shared["exposure"].values, 1e-6, None)),
+    cat_features=CAT_FEATURES_SHARED,
 )
-
-# Step 3: Reproduce the test set and score it
-orig_train = original_data[original_data["accident_year"] < 2024]
-orig_test  = original_data[original_data["accident_year"] == 2024]
-
-orig_pool_te = Pool(orig_test[FEATURES6], orig_test["claim_count"].values,
-                    baseline=np.log(np.clip(orig_test["exposure"].values, 1e-6, None)))
-
-repro_pred = original_model.predict(orig_pool_te)
-repro_dev  = poisson_deviance(
-    orig_test["claim_count"].values, repro_pred, orig_test["exposure"].values
+model_shared = CatBoostRegressor(
+    loss_function="Poisson", iterations=200, depth=4,
+    learning_rate=0.08, random_seed=42, verbose=0,
 )
+model_shared.fit(train_pool_shared)
 
-print(f"\nLogged deviance:     {audit6['test_deviance']:.5f}")
-print(f"Reproduced deviance: {repro_dev:.5f}")
-print(f"Match: {abs(repro_dev - audit6['test_deviance']) < 1e-8}")
+# Scoring — SAME FUNCTION
+test_shared = apply_features(pl.from_pandas(test_pd)).to_pandas()
+score_pool_shared = Pool(
+    test_shared[FEATURE_COLS_SHARED],
+    baseline=np.log(np.clip(test_pd["exposure"].values, 1e-6, None)),
+    cat_features=CAT_FEATURES_SHARED,
+)
+pred_shared = model_shared.predict(score_pool_shared) / test_pd["exposure"].values
+
+for ncd in [0, 5]:
+    mask = test_ncb == ncd
+    print(f"NCD {ncd} | Shared function: {pred_shared[mask].mean():.4f}")
+# NCD 0 should be ~2x NCD 5 — matching the DGP relativities.
 ```
 
-**Expected outcome:** The reproduced deviance should match the logged deviance to floating-point precision. If it does not, identify why -- the most common causes are: the model was not logged with the exact same random seed, or the test set rows changed between versions.
-
-### Task 4: Show the current data gives a different result
-
-Prove that using the current (corrected) data instead of the original gives a different deviance, even with the same model:
+**Part C:**
 
 ```python
-# Score the original model on the CURRENT (corrected) data
-current_test = df6_corrected[df6_corrected["accident_year"] == 2024]
-current_pool = Pool(current_test[FEATURES6], current_test["claim_count"].values,
-                    baseline=np.log(np.clip(current_test["exposure"].values, 1e-6, None)))
+class SimpleFeatureSpec:
+    def __init__(self):
+        self.spec = {}
 
-current_pred = original_model.predict(current_pool)
-current_dev  = poisson_deviance(
-    current_test["claim_count"].values, current_pred, current_test["exposure"].values
+    def record(self, df, cat_features):
+        for col in df.columns:
+            s = df[col]
+            if col in cat_features or s.dtype == pl.Utf8:
+                self.spec[col] = {"dtype": "categorical",
+                                  "values": sorted(s.drop_nulls().unique().to_list())}
+            else:
+                self.spec[col] = {"dtype": "numeric",
+                                  "min": float(s.min()), "max": float(s.max())}
+
+    def validate(self, df):
+        errors = []
+        for col, spec in self.spec.items():
+            if col not in df.columns:
+                errors.append(f"Missing column: {col}")
+                continue
+            if spec["dtype"] == "categorical" and df[col].dtype not in (pl.Utf8, pl.Categorical):
+                errors.append(
+                    f"{col}: expected categorical (Utf8), got {df[col].dtype}. "
+                    f"Likely an encoding change between training and scoring. "
+                    f"Check apply_features() is called before scoring."
+                )
+        return errors
+
+spec = SimpleFeatureSpec()
+spec.record(
+    pl.from_pandas(train_shared[FEATURE_COLS_SHARED]),
+    cat_features=CAT_FEATURES_SHARED,
 )
 
-print(f"Original data deviance:  {repro_dev:.5f}")
-print(f"Corrected data deviance: {current_dev:.5f}")
-print(f"Difference:              {abs(current_dev - repro_dev):.5f}")
-print("\nThis demonstrates why the audit record's raw_table_version is essential:")
-print("without it, you cannot distinguish between the original result and")
-print("a result contaminated by post-hoc data corrections.")
+# Validate the wrong-encoded scoring data
+errors = spec.validate(pl.from_pandas(test_feats_wrong[FEATURE_COLS_SHARED]))
+for e in errors:
+    print(f"VALIDATION ERROR: {e}")
+# Prints: ncb_encoded: expected categorical (Utf8), got Int32.
 ```
+
+</details>
 
 ---
 
-## Exercise 7: Putting it all together -- full rate review in one session
+## Exercise 2: Walk-forward CV — understanding the time boundary
 
-**References:** All tutorial parts.
+**What this covers:** The temporal split principle, and why random splits produce optimistic metrics for insurance data.
 
-**What this exercise covers:** Running a complete rate review cycle on your own synthetic data from scratch, without using the tutorial's configuration. This is the capstone exercise.
+**Setup — use the dataset from Exercise 1.**
 
-**Objective.** You are the lead pricing actuary for the Q3 2026 UK motor rate review. You need to produce a pricing committee pack by the end of the session. The output must include: a Poisson frequency model validated on accident year 2024, conformal 90% severity intervals validated on accident year 2024, a rate action recommendation, and a full pipeline audit record.
+**Part A.** Implement both splits and compare:
 
-**Requirements:**
-1. Generate a portfolio of 100,000 policies with at least four rating factors of your own design. At least one must be a genuine categorical variable. At least one must require a non-trivial encoding transform.
-2. Use a TRANSFORMS list pattern as in Tutorial Part 7. Define all transforms as pure functions.
-3. Run three-fold walk-forward CV with the Poisson deviance.
-4. Run Optuna tuning (minimum 15 trials) for both frequency and severity.
-5. Calibrate a conformal predictor on the penultimate accident year. Validate on the final year. Achieve at least 85% minimum decile coverage or explain why you cannot.
-6. Write a pipeline audit record to a Delta table.
-7. Write a five-bullet pricing committee summary (as a Markdown cell) covering: model performance (Gini and deviance), conformal coverage result, pure premium range, recommended rate action and rationale, limitations.
+1. **Random split**: 80% train, 20% test, random.
+2. **Temporal split**: train on 2022-2024, test on 2025.
 
-**Time allocation:** This exercise is designed to take 45-60 minutes. Do not try to write perfect code on the first pass -- get the pipeline running, then refine.
+Train the same default CatBoost Poisson model on each split and compute Poisson deviance on the respective test sets. Which split produces a lower (better) test deviance? Which is the honest estimate of future performance?
 
-### Starter code
+**Part B.** The IBNR problem: the 2025 accident year's claims have only partially developed at the time the data was extracted. Create a version of the fold where 2025 policies are included in training but their claim counts are capped at 50% of their actual value (simulating partial development). Train on 2022-2024 plus this "truncated 2025", test on the real 2025 data. Compare the test deviance to the clean temporal split. What does this tell you about the importance of the IBNR buffer?
+
+<details>
+<summary>Solution</summary>
+
+**Part A:**
 
 ```python
-# Stage 0: Libraries (run this cell first, then restart Python)
-%pip install catboost optuna mlflow polars "insurance-cv" "insurance-conformal[catboost]" "rate-optimiser" --quiet
+from sklearn.model_selection import train_test_split
+
+df_pd_ex2 = df.to_pandas()
+
+# Random split
+X_all   = df_pd_ex2[["ncb_years", "vehicle_group", "driver_age"]]
+y_all   = df_pd_ex2["claim_count"].values
+w_all   = df_pd_ex2["exposure"].values
+
+X_tr_r, X_te_r, y_tr_r, y_te_r, w_tr_r, w_te_r = train_test_split(
+    X_all, y_all, w_all, test_size=0.2, random_state=42
+)
+m_rand = CatBoostRegressor(loss_function="Poisson", iterations=200,
+                           depth=4, learning_rate=0.08, random_seed=42, verbose=0)
+m_rand.fit(Pool(X_tr_r, y_tr_r, baseline=np.log(np.clip(w_tr_r, 1e-6, None))))
+pred_r = m_rand.predict(Pool(X_te_r, baseline=np.log(np.clip(w_te_r, 1e-6, None))))
+
+def pd_deviance(y_true, y_pred, w):
+    fp = np.clip(y_pred / w, 1e-10, None)
+    ft = y_true / w
+    return float((2 * w * (np.where(ft>0, ft*np.log(ft/fp), 0.) - (ft-fp))).sum() / w.sum())
+
+dev_random = pd_deviance(y_te_r, pred_r, w_te_r)
+
+# Temporal split
+df_tr_t = df_pd_ex2[df_pd_ex2["accident_year"] < 2025]
+df_te_t = df_pd_ex2[df_pd_ex2["accident_year"] == 2025]
+
+m_temp = CatBoostRegressor(loss_function="Poisson", iterations=200,
+                           depth=4, learning_rate=0.08, random_seed=42, verbose=0)
+m_temp.fit(Pool(
+    df_tr_t[["ncb_years","vehicle_group","driver_age"]],
+    df_tr_t["claim_count"].values,
+    baseline=np.log(np.clip(df_tr_t["exposure"].values, 1e-6, None)),
+))
+pred_t = m_temp.predict(Pool(
+    df_te_t[["ncb_years","vehicle_group","driver_age"]],
+    baseline=np.log(np.clip(df_te_t["exposure"].values, 1e-6, None)),
+))
+dev_temporal = pd_deviance(df_te_t["claim_count"].values, pred_t, df_te_t["exposure"].values)
+
+print(f"Random split deviance:   {dev_random:.5f}  (optimistic — future data in training)")
+print(f"Temporal split deviance: {dev_temporal:.5f}  (honest — training uses only past data)")
+# Random split deviance will be materially lower (better-looking).
+# This is the metric inflation from temporal leakage.
 ```
 
-```python
-dbutils.library.restartPython()
-```
+**Part B:**
 
 ```python
-# Your own portfolio -- customise the features and DGP
-import polars as pl
-import numpy as np
+df_2025 = df_pd_ex2[df_pd_ex2["accident_year"] == 2025].copy()
+df_2025["claim_count"] = (df_2025["claim_count"] * 0.5).astype(int)   # IBNR truncation
+
+df_contaminated = pd.concat([
+    df_pd_ex2[df_pd_ex2["accident_year"] < 2025],
+    df_2025
+])
+df_test_clean = df_pd_ex2[df_pd_ex2["accident_year"] == 2025]
+
+m_cont = CatBoostRegressor(loss_function="Poisson", iterations=200,
+                           depth=4, learning_rate=0.08, random_seed=42, verbose=0)
+m_cont.fit(Pool(
+    df_contaminated[["ncb_years","vehicle_group","driver_age"]],
+    df_contaminated["claim_count"].values,
+    baseline=np.log(np.clip(df_contaminated["exposure"].values, 1e-6, None)),
+))
+pred_cont = m_cont.predict(Pool(
+    df_test_clean[["ncb_years","vehicle_group","driver_age"]],
+    baseline=np.log(np.clip(df_test_clean["exposure"].values, 1e-6, None)),
+))
+dev_contaminated = pd_deviance(df_test_clean["claim_count"].values, pred_cont,
+                                df_test_clean["exposure"].values)
+
+print(f"Clean temporal split deviance:  {dev_temporal:.5f}")
+print(f"IBNR-contaminated deviance:     {dev_contaminated:.5f}")
+# Contaminated deviance will be higher (worse) because the model learned to
+# predict lower claim counts in 2025 (half the true value) — it systematically
+# underpredicts on the held-out 2025 test set with true counts.
+print("\nThe IBNR buffer excludes immature accident periods from training.")
+print("Without it, the model learns to predict partially developed claim counts")
+print("and will systematically underprice in the prospective period.")
+```
+
+</details>
+
+---
+
+## Exercise 3: Optuna tuning — understanding what you are actually optimising
+
+**What this covers:** The relationship between hyperparameter choices and model behaviour. Not just how to run Optuna, but what to do with the results.
+
+**Setup — use the temporal split from Exercise 2.**
+
+**Part A.** Run an Optuna study with 15 trials. After it completes, plot the relationship between `depth` and `learning_rate` across all trials, coloured by deviance value. What pattern do you see? Is depth or learning rate more important for this dataset?
+
+```python
 import optuna
-import mlflow
-from catboost import CatBoostRegressor, Pool
-from insurance_conformal import InsuranceConformalPredictor
+optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-# YOUR PORTFOLIO DGP HERE
-# Requirements:
-# - 100,000 policies
-# - 4+ rating factors, at least 1 categorical, at least 1 needing a non-trivial transform
-# - accident years 2021-2024
-# - claim_count drawn from Poisson(frequency * exposure)
-# - incurred_loss representing severity * claim_count
+df_pd_ex3 = df.to_pandas()
+df_tr3 = df_pd_ex3[df_pd_ex3["accident_year"] < 2025]
+df_te3 = df_pd_ex3[df_pd_ex3["accident_year"] == 2025]
 
-rng = np.random.default_rng(seed=2026)
-n = 100_000
-
-# ... your code here ...
+# TODO: define objective function and run study with 15 trials.
+# Collect trial.params and trial.value for the plot.
 ```
+
+**Part B.** The optimal depth from your Optuna study is likely 4 or 5. Train two models: one with depth=3 (underfit), one with depth=8 (potential overfit). Compare their test deviances. Which direction of misspecification costs more?
+
+**Part C.** Add `subsample` and `colsample_bylevel` to the Optuna search space. Do either of these parameters improve the best deviance substantially? Justify your answer in terms of what these parameters do.
+
+<details>
+<summary>Solution</summary>
+
+**Part A:**
 
 ```python
-# YOUR TRANSFORMS LIST HERE
-# Requirements:
-# - At least 4 transform functions, one per rating factor
-# - All constants defined at module level (not inside functions)
-# - apply_transforms() calls all functions in order
+import polars as pl
 
-TRANSFORMS   = []  # fill in
-FEATURE_COLS = []  # fill in
-CAT_FEATURES = []  # fill in
+FEAT = ["ncb_years", "vehicle_group", "driver_age"]
+tr_pool = Pool(df_tr3[FEAT], df_tr3["claim_count"].values,
+               baseline=np.log(np.clip(df_tr3["exposure"].values, 1e-6, None)))
+te_pool = Pool(df_te3[FEAT], df_te3["claim_count"].values,
+               baseline=np.log(np.clip(df_te3["exposure"].values, 1e-6, None)))
 
-def apply_transforms(df: pl.DataFrame) -> pl.DataFrame:
-    for fn in TRANSFORMS:
-        df = fn(df)
-    return df
+def objective_ex3(trial):
+    p = {
+        "iterations":    trial.suggest_int("iterations", 100, 400),
+        "depth":         trial.suggest_int("depth", 3, 8),
+        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.20, log=True),
+        "l2_leaf_reg":   trial.suggest_float("l2_leaf_reg", 1.0, 15.0),
+        "loss_function": "Poisson", "random_seed": 42, "verbose": 0,
+    }
+    m = CatBoostRegressor(**p)
+    m.fit(tr_pool, eval_set=te_pool)
+    pred = m.predict(te_pool)
+    return pd_deviance(df_te3["claim_count"].values, pred, df_te3["exposure"].values)
+
+study3 = optuna.create_study(direction="minimize")
+study3.optimize(objective_ex3, n_trials=15)
+
+# Collect for analysis
+trial_df = pl.DataFrame({
+    "depth":         [t.params["depth"] for t in study3.trials],
+    "learning_rate": [t.params["learning_rate"] for t in study3.trials],
+    "deviance":      [t.value for t in study3.trials],
+}).sort("deviance")
+print(trial_df)
+print(f"\nBest: depth={study3.best_params['depth']}, "
+      f"lr={study3.best_params['learning_rate']:.4f}, "
+      f"deviance={study3.best_value:.5f}")
+# Typically depth=4-5 dominates. Learning rate matters less than depth for
+# small datasets — high lr with few trees can match low lr with many trees.
 ```
+
+**Part B:**
 
 ```python
-# YOUR CV LOOP HERE
-# Requirements:
-# - 3 temporal folds
-# - Poisson deviance metric
-# - IBNR buffer of 6 months (or justify a different buffer for your DGP)
-# - baseline=np.log(exposure) for the Poisson offset -- not weight=
-
-cv_deviances = []
-# ... your code here ...
+for depth in [3, study3.best_params["depth"], 8]:
+    m = CatBoostRegressor(
+        loss_function="Poisson", iterations=300, depth=depth,
+        learning_rate=study3.best_params["learning_rate"],
+        l2_leaf_reg=study3.best_params["l2_leaf_reg"],
+        random_seed=42, verbose=0,
+    )
+    m.fit(tr_pool, eval_set=te_pool)
+    pred = m.predict(te_pool)
+    dev = pd_deviance(df_te3["claim_count"].values, pred, df_te3["exposure"].values)
+    print(f"Depth {depth}: deviance = {dev:.5f}")
+# Depth=3 underfits and depth=8 likely overfits slightly.
+# For insurance data with 20,000 rows, overfitting is more harmful than underfitting —
+# the model memorises noise in thin cells rather than learning generalizable patterns.
 ```
+
+**Part C:**
 
 ```python
-# YOUR OPTUNA STUDIES HERE
-# Requirements:
-# - Separate studies for frequency and severity
-# - Minimum 15 trials each
-# - Tune on the last CV fold
-# - best_freq_params and best_sev_params must be defined before Stage 6
+def objective_extended(trial):
+    p = {
+        "iterations":      trial.suggest_int("iterations", 100, 400),
+        "depth":           trial.suggest_int("depth", 3, 7),
+        "learning_rate":   trial.suggest_float("learning_rate", 0.01, 0.20, log=True),
+        "l2_leaf_reg":     trial.suggest_float("l2_leaf_reg", 1.0, 15.0),
+        "subsample":       trial.suggest_float("subsample", 0.6, 1.0),
+        "colsample_bylevel": trial.suggest_float("colsample_bylevel", 0.6, 1.0),
+        "loss_function": "Poisson", "random_seed": 42, "verbose": 0,
+    }
+    m = CatBoostRegressor(**p)
+    m.fit(tr_pool, eval_set=te_pool)
+    pred = m.predict(te_pool)
+    return pd_deviance(df_te3["claim_count"].values, pred, df_te3["exposure"].values)
 
-best_freq_params = {}
-best_sev_params  = {}
-# ... your code here ...
+study_ext = optuna.create_study(direction="minimize")
+study_ext.optimize(objective_extended, n_trials=15)
+print(f"\nWith subsample + colsample: {study_ext.best_value:.5f}")
+print(f"Without:                    {study3.best_value:.5f}")
+print(f"Improvement: {study3.best_value - study_ext.best_value:.5f}")
+# Typically subsample and colsample_bylevel provide small improvements
+# (<0.001 deviance units) on datasets of this size. They matter more for
+# large datasets (1M+ rows) where regularisation via column/row subsampling
+# becomes important. For personal lines with 20,000-200,000 rows, depth and
+# l2_leaf_reg are the dominant regularisation parameters.
 ```
 
-```python
-# YOUR FINAL MODELS HERE
-# Requirements:
-# - Log to MLflow with data table versions and feature list
-# - Predict severity for ALL test policies (not just claims-only)
-# - Compute pure_premium = freq_rate * sev_pred for all test policies
-
-freq_run_id = ""
-sev_run_id  = ""
-pure_premium = np.array([])
-# ... your code here ...
-```
-
-```python
-# YOUR CONFORMAL INTERVALS HERE
-# Requirements:
-# - Temporal calibration: calibration year = penultimate accident year
-# - MUST NOT use random split for calibration
-# - Run coverage_by_decile diagnostic
-# - Flag any risks in top 10% relative interval width for referral
-
-min_cov = 0.0
-# ... your code here ...
-```
-
-```python
-# YOUR AUDIT RECORD HERE
-# Requirements:
-# - Written to a Delta table in mode("append")
-# - Must include: raw table version, features table version, MLflow run IDs,
-#   test deviance, conformal min decile coverage, run date, feature list
-
-# ... your code here ...
-```
-
-```python
-%md
-## Q3 2026 Motor Rate Review -- Pricing Committee Summary
-
-- **Model performance:** (your Gini and test deviance here)
-- **Conformal coverage:** (your coverage diagnostic result here)
-- **Pure premium range:** (your P25-P75 and P95 here)
-- **Recommended rate action:** (your recommendation here)
-- **Key limitations:** (at least two specific to your portfolio)
-```
-
-### Stretch tasks
-
-**Stretch 1.** Add the `FeatureSpec` class from Exercise 1. Record the spec at training time, log it as an MLflow artefact, and write a validation check that runs before scoring.
-
-**Stretch 2.** Add a fourth accident year to your portfolio (2025) with a 6% loss cost trend uplift. Retrain the pipeline on 2021-2024 and predict frequencies for 2025. Use these predictions as the technical premium input for the rate optimiser. Set the LR target at 2% below the observed test-set LR. Report the factor adjustments.
-
-**Stretch 3.** The efficient frontier. Solve the rate optimiser for LR targets of 0.68, 0.70, 0.72, 0.74, and 0.76. Plot the resulting volume-LR frontier (volume retention on x, expected LR on y). At which LR target does the volume constraint bind first?
-
-**Stretch 4.** Audit trail integrity check. After completing the full pipeline, simulate a data correction (modify 200 rows of the raw table) and recheck the audit record. Show that: (a) the Delta version increments, (b) the original data is still accessible at the original version, (c) the logged model's deviance is unchanged when scored against the original data, and (d) the deviance changes when scored against the corrected data.
+</details>
 
 ---
 
-## Appendix: Common error messages and fixes
+## Exercise 4: Calibration testing — diagnosing a miscalibrated model
 
-### `ModuleNotFoundError: No module named 'insurance_cv'`
+**What this covers:** The Murphy decomposition in practice. You will deliberately miscalibrate a model and diagnose whether the fix is RECALIBRATE or REFIT.
 
-The `%pip install insurance-cv` cell did not run, or ran before `dbutils.library.restartPython()`. Run the install cell again, wait for it to complete, then run `dbutils.library.restartPython()` before importing.
+**Setup:**
 
-### `CatBoostError: Cannot find model for feature ...`
+```python
+from insurance_monitoring.calibration import CalibrationChecker, rectify_balance
 
-CatBoost is seeing a feature in scoring that was treated as categorical in training (or vice versa). The `cat_features` list at scoring time must be identical to the one used in training. Use the `FeatureSpec` class from Exercise 1 to detect this before scoring.
+# Use the temporal split from Exercise 2.
+# Train the model on 2022-2024, score on 2025.
+# We already have: pred_t (predictions), df_te_t (test set).
+```
 
-### `ValueError: baseline and label must have the same number of elements`
+**Part A.** Apply a systematic underestimation to the predictions: multiply all predictions by 0.88 (simulating 12% underprediction from a year of claims inflation). Run `CalibrationChecker` on the deflated predictions. What verdict do you get? Is it RECALIBRATE or REFIT?
 
-The `baseline` array passed to `Pool()` has a different length to the label array. Check that `np.log(exposure)` is computed from the same subset as `y_train` and `X_train`.
+**Part B.** Apply a structural miscalibration instead: reverse the prediction ordering for the top and bottom quartiles (swap the highest-predicted risks with the lowest-predicted risks). Run `CalibrationChecker`. What verdict do you get now? Why is this harder to fix than Part A?
 
-### `AssertionError` in audit record cell
+**Part C.** Apply `rectify_balance()` to the Part A predictions (the 12% underestimate). Verify that the balance ratio returns to 1.0, and re-run the auto-calibration test. Does it pass?
 
-One of the pipeline stages did not set its output variable. Check that `freq_run_id`, `sev_run_id`, `min_cov`, and `result.converged` are all defined before the audit record cell runs. If the pipeline failed partway through, re-run from the failed stage.
+<details>
+<summary>Solution</summary>
 
-### `AnalysisException: Table or view not found`
+**Part A:**
 
-The schema does not exist. Run the `CREATE SCHEMA` cell in Stage 1 before writing any tables. If using `hive_metastore`, the schema creation syntax differs -- see Tutorial Part 5.
+```python
+checker = CalibrationChecker(distribution="poisson")
 
-### `optuna.exceptions.ExperimentalWarning`
+# Deflated predictions (12% underprediction)
+pred_deflated = pred_t * 0.88
 
-Informational only -- not an error. Suppress with `optuna.logging.set_verbosity(optuna.logging.WARNING)` at the top of the Optuna cell.
+report_a = checker.check(
+    y=df_te_t["claim_count"].values.astype(float),
+    y_hat=pred_deflated,
+    exposure=df_te_t["exposure"].values,
+    n_bins=10, seed=42,
+)
+print("Part A: 12% uniform underprediction")
+print(report_a.verdict())
+print(f"Balance ratio: {report_a.balance_ratio:.4f}")
+print(f"Murphy verdict: {report_a.murphy_verdict}")
+# Verdict: RECALIBRATE
+# Reason: GMCB (global miscalibration) dominates. The error is a uniform
+# scalar shift — the model's rank ordering is correct but the level is wrong.
+# Multiplying by the balance ratio fixes it.
+```
 
-### Coverage diagnostic fails with `IndexError`
+**Part B:**
 
-The calibration set has too few observations (fewer than 100 claims) to split into deciles reliably. Either extend the calibration window (use two years instead of one) or reduce the number of coverage groups with `coverage_by_quantile(n_groups=5)`.
+```python
+# Structural miscalibration: swap top and bottom quartile predictions
+pred_structural = pred_t.copy()
+q25 = np.percentile(pred_structural, 25)
+q75 = np.percentile(pred_structural, 75)
+top_q  = pred_structural > q75
+bot_q  = pred_structural < q25
+
+# Get sorted indices
+top_vals = np.sort(pred_structural[top_q])
+bot_vals = np.sort(pred_structural[bot_q])
+
+# Swap: high-risk predictions replaced with low-risk predictions, and vice versa
+pred_swapped = pred_structural.copy()
+pred_swapped[top_q] = bot_vals[np.argsort(np.argsort(pred_structural[top_q]))]
+pred_swapped[bot_q] = top_vals[np.argsort(np.argsort(pred_structural[bot_q]))]
+
+report_b = checker.check(
+    y=df_te_t["claim_count"].values.astype(float),
+    y_hat=pred_swapped,
+    exposure=df_te_t["exposure"].values,
+    n_bins=10, seed=42,
+)
+print("\nPart B: Structural miscalibration (quartile swap)")
+print(report_b.verdict())
+print(f"Balance ratio: {report_b.balance_ratio:.4f}  (near 1.0 — global balance preserved)")
+print(f"Murphy verdict: {report_b.murphy_verdict}")
+print(f"DSC: {report_b.murphy_dsc_pct:.1f}%")
+# Verdict: REFIT (LMCB > GMCB)
+# The swap destroys the model's discrimination — the rank ordering is wrong.
+# Global balance is preserved (we swapped equal-magnitude values), so GMCB is low.
+# LMCB is high because the reliability diagram shows high predictions for
+# low-risk policies and low predictions for high-risk policies.
+# No scalar correction can fix reversed rank ordering — the model must be refit.
+```
+
+**Part C:**
+
+```python
+pred_corrected = rectify_balance(
+    y_hat=pred_deflated,
+    y=df_te_t["claim_count"].values.astype(float),
+    exposure=df_te_t["exposure"].values,
+    method="multiplicative",
+)
+correction = float(pred_corrected.mean() / pred_deflated.mean())
+print(f"\nPart C: Balance correction factor: {correction:.4f}")
+
+report_c = checker.check(
+    y=df_te_t["claim_count"].values.astype(float),
+    y_hat=pred_corrected,
+    exposure=df_te_t["exposure"].values,
+    n_bins=10, seed=42,
+)
+print(f"Post-correction balance ratio: {report_c.balance_ratio:.4f}  (target: 1.0000)")
+print(f"Post-correction auto-cal p:    {report_c.auto_cal_p_value:.4f}")
+print(f"Post-correction verdict:       {report_c.murphy_verdict}")
+# Balance ratio returns to 1.000. Auto-calibration test also passes because
+# the underlying model had good per-decile calibration — the only error was
+# the 12% global underprediction, which the multiplicative correction fixes.
+```
+
+</details>
+
+---
+
+## Exercise 5: SHAP relativities — comparing to GLM output
+
+**What this covers:** Extracting and interpreting SHAP relativities, and comparing them to a parallel GLM.
+
+**Setup — use the trained frequency model from Exercise 3 (or the tutorial Stage 6 model).**
+
+**Part A.** Compute SHAP relativities for the frequency model using `SHAPRelativities`. Print the NCB deficit factor table (ncb_deficit levels 0-5 with relativities and 95% CIs). Do the relativities match the DGP used to generate the data?
+
+**Part B.** Fit a Poisson GLM using `statsmodels` on the same training data with NCB deficit and driver age as features. Extract the GLM `exp(beta)` factor table and compare it to the SHAP relativities. For which features do they agree most closely? For which do they diverge?
+
+**Part C.** The SHAP relativities have confidence intervals. Identify the level with the widest relative CI (upper_ci / relativity). What explains the width? How would you present this to the underwriting committee?
+
+<details>
+<summary>Solution</summary>
+
+**Part A:**
+
+```python
+from shap_relativities import SHAPRelativities
+import polars as pl
+
+df_pd_ex5 = df.to_pandas()
+df_tr5 = df_pd_ex5[df_pd_ex5["accident_year"] < 2025].copy()
+
+FEAT5 = ["ncb_years", "vehicle_group", "driver_age"]
+tr5_pool = Pool(df_tr5[FEAT5], df_tr5["claim_count"].values,
+                baseline=np.log(np.clip(df_tr5["exposure"].values, 1e-6, None)))
+model5 = CatBoostRegressor(loss_function="Poisson", iterations=300, depth=4,
+                            learning_rate=0.08, random_seed=42, verbose=0)
+model5.fit(tr5_pool)
+
+df_te5 = df_pd_ex5[df_pd_ex5["accident_year"] == 2025]
+X_te5  = pl.from_pandas(df_te5[FEAT5].reset_index(drop=True))
+exp_te5 = pl.Series("exposure", df_te5["exposure"].tolist())
+
+sr5 = SHAPRelativities(model=model5, X=X_te5, exposure=exp_te5)
+sr5.fit()
+rels5 = sr5.extract_relativities(normalise_to="mean")
+
+ncb_rels = rels5.filter(pl.col("feature") == "ncb_years").sort("level")
+print("NCB relativities (SHAP):")
+print(ncb_rels.select(["level", "relativity", "lower_ci", "upper_ci", "n_obs"]))
+
+# DGP relativities: {0: 2.3, 1: 1.8, 2: 1.4, 3: 1.1, 4: 0.85, 5: 0.62}
+# normalised to mean: divide by (2.3+1.8+1.4+1.1+0.85+0.62)/6 = 1.345
+# NCD 0 mean-normalised: 2.3/1.345 = 1.71
+# NCD 5 mean-normalised: 0.62/1.345 = 0.46
+print("\nDGP relativities (mean-normalised):")
+raw = {0:2.3, 1:1.8, 2:1.4, 3:1.1, 4:0.85, 5:0.62}
+mean_raw = sum(raw.values()) / len(raw)
+for k, v in raw.items():
+    print(f"  NCB {k}: {v/mean_raw:.3f}")
+```
+
+**Part B:**
+
+```python
+import statsmodels.formula.api as smf
+
+# Add log_exposure as offset
+df_tr5_sm = df_tr5.copy()
+df_tr5_sm["log_exposure"] = np.log(np.clip(df_tr5_sm["exposure"].values, 1e-6, None))
+df_tr5_sm["ncb_cat"] = df_tr5_sm["ncb_years"].astype("category")
+
+glm_model = smf.glm(
+    formula="claim_count ~ C(ncb_cat) + vehicle_group + driver_age",
+    data=df_tr5_sm,
+    family=smf.families.Poisson(),
+    offset=df_tr5_sm["log_exposure"],
+).fit()
+
+print("GLM NCB factor relativities:")
+for param, val in glm_model.params.items():
+    if "ncb_cat" in param:
+        level = int(param.split("[T.")[1].rstrip("]"))
+        print(f"  NCB {level}: exp(beta) = {np.exp(val):.3f}")
+
+print("\nSHAP vs GLM comparison:")
+print("Feature 'ncb_years': generally close (monotone, similar magnitude)")
+print("Feature 'driver_age': SHAP captures non-linear effects; GLM assumes linear")
+print("Divergence in driver_age is the interaction that GLM cannot express without")
+print("manual quadratic terms. SHAP picks it up automatically.")
+```
+
+**Part C:**
+
+```python
+# Add relative CI width
+rels_with_width = rels5.with_columns(
+    ((pl.col("upper_ci") - pl.col("lower_ci")) / pl.col("relativity")).alias("rel_ci_width")
+).sort("rel_ci_width", descending=True)
+
+print("Widest relative CI (most uncertain levels):")
+print(rels_with_width.head(5).select(["feature", "level", "relativity",
+                                       "lower_ci", "upper_ci", "n_obs", "rel_ci_width"]))
+
+# Typically the widest CI is for a thin category (e.g., Scotland, which is 10% of
+# the portfolio). Presenting to the underwriting committee:
+# "The Scotland factor has a CI of ±18% around its point estimate of 0.87x.
+#  This reflects 2,100 policies in the test year — about 1/4 the exposure of the
+#  Midlands. We recommend applying a credibility weight to the Scotland relativity
+#  blending it towards the portfolio mean before deployment, as in Module 6."
+```
+
+</details>
+
+---
+
+## Exercise 6: Pipeline resilience — what happens when a stage fails?
+
+**What this covers:** Designing a pipeline that fails explicitly rather than silently, and recovering from stage failures.
+
+**Context.** A production pipeline that silently produces wrong outputs is worse than one that crashes with a clear error message. This exercise practises adding explicit failure guards to each stage.
+
+**Part A.** The severity model in Stage 6 predicts negative values for 3 policies when run on unusual data (a known CatBoost edge case with Tweedie loss on very small datasets). Write the assertion code that catches this before the pure premium computation, and the recovery strategy: clip predictions to the 1st percentile of positive predictions.
+
+```python
+# Simulate the edge case: inject 3 negative severity predictions
+sev_pred_with_negatives = np.where(
+    np.random.default_rng(0).random(1000) < 0.003,  # 3 negatives per 1000
+    -np.abs(np.random.default_rng(1).normal(100, 50, 1000)),
+    np.random.default_rng(2).gamma(2, 1500, 1000),
+)
+
+# TODO: Write assertion + recovery code
+```
+
+**Part B.** The Optuna study crashes on trial 7 because the cluster ran out of memory during a high-depth, high-iteration trial. Write a try-except wrapper around the objective function that returns the worst possible value (maximum deviance seen so far) when a trial fails, so Optuna can continue without interruption.
+
+**Part C.** The `CalibrationChecker` returns `REFIT` for the frequency model. Write the code that stops the pipeline at Stage 8.5 with a meaningful error message, and writes a partial audit record to Delta that records the Murphy verdict and the run date, so the investigation can be traced.
+
+<details>
+<summary>Solution</summary>
+
+**Part A:**
+
+```python
+def validate_severity_predictions(
+    sev_pred: np.ndarray,
+    fallback: str = "clip_to_p01",
+) -> np.ndarray:
+    """
+    Validate and optionally repair severity predictions.
+    Raises if non-finite values are present. Clips negatives if fallback="clip_to_p01".
+    """
+    n_nonfinite = (~np.isfinite(sev_pred)).sum()
+    if n_nonfinite > 0:
+        raise ValueError(
+            f"Severity model produced {n_nonfinite} non-finite predictions. "
+            f"This indicates a numerical instability in the Tweedie model. "
+            f"Check for extreme values in the input features."
+        )
+
+    n_negative = (sev_pred <= 0).sum()
+    if n_negative > 0:
+        if fallback == "clip_to_p01":
+            p01 = np.percentile(sev_pred[sev_pred > 0], 1)
+            sev_pred_clean = np.where(sev_pred <= 0, p01, sev_pred)
+            print(f"WARNING: {n_negative} non-positive severity predictions detected.")
+            print(f"  Clipped to P1 of positive predictions: £{p01:,.2f}")
+            print(f"  This is an edge case — investigate the model if it occurs frequently.")
+            return sev_pred_clean
+        else:
+            raise ValueError(
+                f"Severity model produced {n_negative} non-positive predictions. "
+                f"This is a known Tweedie edge case. Set fallback='clip_to_p01' "
+                f"to auto-correct, or investigate the model configuration."
+            )
+    return sev_pred
+
+# Apply
+sev_clean = validate_severity_predictions(sev_pred_with_negatives)
+assert (sev_clean > 0).all(), "Validation failed to fix non-positive predictions"
+print(f"All {len(sev_clean):,} predictions are now positive.")
+```
+
+**Part B:**
+
+```python
+worst_deviance = [0.15]   # mutable container so inner function can update it
+
+def robust_objective(trial: optuna.Trial) -> float:
+    """
+    Optuna objective with graceful trial failure handling.
+    Returns worst_deviance if the trial errors, so the study continues.
+    """
+    params = {
+        "iterations":    trial.suggest_int("iterations", 100, 600),
+        "depth":         trial.suggest_int("depth", 3, 8),
+        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.20, log=True),
+        "l2_leaf_reg":   trial.suggest_float("l2_leaf_reg", 1.0, 15.0),
+        "loss_function": "Poisson", "random_seed": 42, "verbose": 0,
+    }
+    try:
+        m = CatBoostRegressor(**params)
+        m.fit(tr5_pool, eval_set=Pool(
+            df_te5[FEAT5], df_te5["claim_count"].values,
+            baseline=np.log(np.clip(df_te5["exposure"].values, 1e-6, None)),
+        ))
+        pred = m.predict(Pool(
+            df_te5[FEAT5],
+            baseline=np.log(np.clip(df_te5["exposure"].values, 1e-6, None)),
+        ))
+        dev = pd_deviance(df_te5["claim_count"].values, pred, df_te5["exposure"].values)
+        worst_deviance[0] = max(worst_deviance[0], dev)
+        return dev
+    except Exception as e:
+        print(f"Trial {trial.number} failed: {e}. Returning worst deviance.")
+        return worst_deviance[0] * 1.05   # slightly worse than worst seen
+
+robust_study = optuna.create_study(direction="minimize")
+robust_study.optimize(robust_objective, n_trials=10)
+print(f"Best deviance (robust study): {robust_study.best_value:.5f}")
+```
+
+**Part C:**
+
+```python
+def stop_pipeline_with_partial_audit(
+    murphy_verdict: str,
+    cal_report,
+    audit_partial: dict,
+    tables: dict,
+) -> None:
+    """
+    Write a partial audit record and raise RuntimeError when the pipeline
+    encounters a REFIT verdict.
+    """
+    partial_record = {
+        **audit_partial,
+        "pipeline_stopped":      True,
+        "stop_reason":           f"CalibrationChecker verdict: {murphy_verdict}",
+        "cal_balance_ratio":     round(float(cal_report.balance_ratio), 4),
+        "cal_murphy_verdict":    murphy_verdict,
+        "cal_dsc_pct":           round(float(cal_report.murphy_dsc_pct), 2),
+        "cal_mcb_pct":           round(float(cal_report.murphy_mcb_pct), 2),
+        "freq_run_id":           audit_partial.get("freq_run_id", "NOT_SET"),
+        "pipeline_notes":        "PIPELINE STOPPED AT STAGE 8.5 — MODEL REQUIRES REFIT",
+    }
+
+    spark.createDataFrame([partial_record]) \
+         .write.format("delta").mode("append") \
+         .saveAsTable(tables["pipeline_audit"])
+
+    raise RuntimeError(
+        f"\n{'='*60}\n"
+        f"PIPELINE STOPPED: Frequency model requires REFIT.\n"
+        f"{'='*60}\n"
+        f"Murphy verdict: {murphy_verdict}\n"
+        f"Discrimination: {cal_report.murphy_dsc_pct:.1f}% of UNC\n"
+        f"Miscalibration: {cal_report.murphy_mcb_pct:.1f}% of UNC\n"
+        f"\nNext steps:\n"
+        f"  1. Examine the per-decile reliability table for structural patterns\n"
+        f"  2. Check for feature distribution shift between training and test year\n"
+        f"  3. Check for IBNR contamination in the training data\n"
+        f"  4. Consider isotonic recalibration on a large holdout set\n"
+        f"  5. Partial audit record written to {tables['pipeline_audit']}\n"
+    )
+
+# Usage in Stage 8.5:
+if cal_murphy_verdict == "REFIT":
+    stop_pipeline_with_partial_audit(
+        murphy_verdict=cal_murphy_verdict,
+        cal_report=cal_report,
+        audit_partial={
+            "run_date": RUN_DATE,
+            "raw_table_version": int(raw_version),
+            "freq_run_id": freq_run_id,
+        },
+        tables=TABLES,
+    )
+```
+
+</details>

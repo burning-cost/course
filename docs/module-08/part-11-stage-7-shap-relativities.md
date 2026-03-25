@@ -1,90 +1,113 @@
-## Part 11: Stage 7 -- SHAP relativities
+## Part 11: Stage 7 — SHAP relativities
 
-SHAP relativities translate the GBM's internal structure into a factor table that the pricing committee and the rating system can understand. We covered this in detail in Module 4. Here we implement it in the pipeline context.
+SHAP relativities translate the GBM's internal structure into a factor table the pricing committee and the rating engine can use. The output format — one row per feature per level, with a multiplicative relativity and confidence interval — is identical to a GLM's `exp(beta)` table. The pricing committee can compare GBM and GLM relativities directly, without needing to understand how SHAP values are computed.
+
+We use the `shap_relativities` library, which handles the normalisation and exposure weighting that raw SHAP values do not provide.
 
 Add a markdown cell:
 
 ```python
 %md
-## Stage 7: SHAP relativities from the frequency model
+## Stage 7: SHAP relativities — frequency model
 ```
 
 ```python
-import shap
+from shap_relativities import SHAPRelativities
+import polars as pl
 
-# Compute SHAP values for the test set
-# The SHAP values are computed in the log-space of the model's output
-# (because the model uses a log link). Exponentiating gives relativities.
-explainer  = shap.TreeExplainer(freq_model)
-shap_vals  = explainer.shap_values(X_test)
+# SHAPRelativities computes SHAP values internally via the model's TreeExplainer.
+# We pass the test set features and exposure.
+# exposure is used to weight each observation's contribution to the mean
+# relativity per level — so a policy with 0.3 years exposure influences
+# the regional relativity less than a policy with a full year.
 
-# SHAP value for feature j on observation i: the contribution of feature j
-# to log(predicted_count) relative to the model's baseline prediction.
-# exp(shap_val) gives the multiplicative relativity.
+X_test_pl = pl.from_pandas(df_test[FEATURE_COLS].reset_index(drop=True))
+exposure_test = pl.Series("exposure", w_test.tolist())
 
-# Mean absolute SHAP by feature: measures overall feature importance
-mean_abs_shap = np.abs(shap_vals).mean(axis=0)
-feature_importance = pl.DataFrame({
-    "feature":         FEATURE_COLS,
-    "mean_abs_shap":   mean_abs_shap.tolist(),
-    "mean_relativity": [float(np.exp(np.abs(shap_vals[:, i])).mean())
-                        for i in range(len(FEATURE_COLS))],
-}).sort("mean_abs_shap", descending=True)
+sr = SHAPRelativities(
+    model=freq_model,
+    X=X_test_pl,
+    exposure=exposure_test,
+    categorical_features=CAT_FEATURES,   # ["region"]
+)
+sr.fit()
 
-print("Feature importance (mean absolute SHAP values):")
-print(feature_importance)
+# extract_relativities returns a Polars DataFrame:
+# feature | level | relativity | lower_ci | upper_ci | mean_shap | shap_std | n_obs | exposure_weight
+#
+# normalise_to="mean": portfolio mean relativity = 1.0 for each feature.
+# This is directly comparable to a GLM factor table normalised to the mean.
+#
+# base_levels: define the base level for each factor, which gets relativity = 1.0.
+# If base_levels is None, normalise_to="mean" applies.
+freq_relativities = sr.extract_relativities(
+    normalise_to="mean",
+    ci_method="clt",    # Central Limit Theorem CIs — appropriate for n_obs > 30 per level
+)
+
+print("Frequency model relativities:")
+print(freq_relativities)
 ```
 
-### Building factor relativity tables
+**What you should see:** A DataFrame with one row per level per feature. For `region`, expect six rows (London, SouthEast, Midlands, North, Scotland, Wales). For `ncb_deficit`, expect six rows (0 through 5). The `relativity` column holds the multiplicative factor — a `relativity` of 1.20 for London means London policies are expected to have 20% more claims than the portfolio average, after controlling for all other factors.
 
-For each feature, we compute the mean SHAP relativity at each level. This is the input that the rate optimiser uses to set the factor structure. Note that these relativities are derived directly from the GBM -- they reflect the actual model predictions, not a post-hoc regression.
+The `lower_ci` and `upper_ci` columns are 95% confidence intervals from the CLT approximation. Wide intervals for a level indicate limited data — the CI for Scotland (10% of the portfolio) will be roughly 2x as wide as the CI for Midlands (22%).
+
+### Writing relativities to Delta
 
 ```python
-# For each categorical feature: mean SHAP relativity per category
-# For continuous features: binned by decile
+(
+    spark.createDataFrame(freq_relativities.to_pandas())
+    .write.format("delta")
+    .mode("overwrite")
+    .option("overwriteSchema", "true")
+    .saveAsTable(TABLES["freq_relativities"])
+)
 
-shap_relativities = {}
+spark.sql(f"""
+    ALTER TABLE {TABLES['freq_relativities']}
+    SET TBLPROPERTIES ('delta.deletedFileRetentionDuration' = 'interval 365 days')
+""")
 
-for j, feat in enumerate(FEATURE_COLS):
-    shap_col = shap_vals[:, j]
-    feat_vals = X_test[feat].values if hasattr(X_test, 'values') else np.array(X_test[feat])
+print(f"Relativities written to {TABLES['freq_relativities']}")
+```
 
-    if feat in CAT_FEATURES:
-        # Categorical: average SHAP per category, exponentiate for relativity
-        categories = np.unique(feat_vals)
-        rel_table  = {}
-        for cat in categories:
-            mask = feat_vals == cat
-            rel_table[cat] = float(np.exp(shap_col[mask].mean()))
-        # Normalise so mean relativity = 1.0
-        mean_rel = np.mean(list(rel_table.values()))
-        rel_table = {k: v / mean_rel for k, v in rel_table.items()}
-        shap_relativities[feat] = rel_table
-        print(f"\n{feat} relativities (normalised to mean=1):")
-        for cat, rel in sorted(rel_table.items()):
-            bar = "#" * int(rel * 10)
-            print(f"  {cat:<15} {rel:.3f}  {bar}")
-    else:
-        # Continuous: bin into 5 groups by value and report mean relativity
-        decile_labels = pd.qcut(feat_vals, q=5, duplicates="drop")
-        rel_by_bin = {}
-        for lbl in decile_labels.unique():
-            mask = decile_labels == lbl
-            rel_by_bin[str(lbl)] = float(np.exp(shap_col[mask].mean()))
-        # Normalise
-        mean_rel = np.mean(list(rel_by_bin.values()))
-        rel_by_bin = {k: v / mean_rel for k, v in rel_by_bin.items()}
-        shap_relativities[feat] = rel_by_bin
-        print(f"\n{feat} relativities by quintile (normalised to mean=1):")
-        for bin_lbl, rel in rel_by_bin.items():
-            bar = "#" * int(rel * 10)
-            print(f"  {bin_lbl:<25} {rel:.3f}  {bar}")
+### Logging to MLflow
 
-# Log SHAP relativities to MLflow as a JSON artefact
+```python
+# Log as a dict artefact alongside the frequency model
+rel_dict = {
+    row["feature"] + "_" + str(row["level"]): float(row["relativity"])
+    for row in freq_relativities.iter_rows(named=True)
+}
+
 with mlflow.start_run(run_id=freq_run_id):
-    mlflow.log_dict(shap_relativities, "shap_relativities.json")
-    mlflow.log_dict({"features": feature_importance.to_dict(as_series=False)},
-                    "feature_importance.json")
+    mlflow.log_dict(rel_dict, "shap_relativities.json")
 
-print("\nSHAP relativities logged to MLflow run:", freq_run_id)
+print(f"Relativities logged to MLflow run {freq_run_id}")
 ```
+
+### Reading the factor table
+
+For the pricing committee pack, pivot the relativity table into factor format:
+
+```python
+# One column per feature — the standard factor table format
+for feature in freq_relativities["feature"].unique().to_list():
+    feature_rels = (
+        freq_relativities
+        .filter(pl.col("feature") == feature)
+        .select(["level", "relativity", "lower_ci", "upper_ci", "n_obs"])
+        .sort("relativity", descending=True)
+    )
+    print(f"\n{feature} (sorted by relativity):")
+    print(feature_rels.with_columns(
+        pl.col("relativity").round(3),
+        pl.col("lower_ci").round(3),
+        pl.col("upper_ci").round(3),
+    ))
+```
+
+**Comparing to GLM relativities.** If you have run a GLM for this line previously, print the GLM relativities alongside the SHAP relativities. Divergences in rank ordering — not just magnitude — are diagnostically informative. If SHAP says London is at 1.25x and the GLM says 1.40x, the difference is likely from interactions (younger drivers in London, higher vehicle groups) that the GLM cannot express without manual interaction terms. These divergences inform the feature engineering decisions in the next model iteration.
+
+**Using relativities in the rate optimiser.** In Stage 9, the rate optimiser expects factor relativities as input. The SHAP relativity table for `region` is directly usable as the factor relativity input — it is already in the expected format (level → multiplicative relativity). This is one of the key connections in the pipeline: the rate optimiser works from the model's own output, not from a separate GLM run.

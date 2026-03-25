@@ -28,13 +28,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from catboost import CatBoostRegressor, Pool
 from insurance_datasets import load_motor
-from insurance_monitoring import (
-    PSICalculator,
-    CSICalculator,
-    AERatio,
-    GiniDrift,
-    MonitoringReport,
-)
+from insurance_monitoring import MonitoringReport
+from insurance_monitoring.drift import psi, csi
+from insurance_monitoring.calibration import ae_ratio, ae_ratio_ci
+from insurance_monitoring.discrimination import gini_coefficient, gini_drift_test
 
 # ---------------------------------------------------------------------------
 # Load data and split into reference / current windows
@@ -112,7 +109,7 @@ print("\nSetup complete.")
 
 **References:** Tutorial Part 4.
 
-**What this exercise covers:** PSI is a single number but the information is in the bins. This exercise takes you from first principles to the `PSICalculator` API, then asks you to identify which part of the risk distribution is driving the shift.
+**What this exercise covers:** PSI is a single number but the information is in the bins. This exercise takes you from first principles to the `psi()` function, then asks you to identify which part of the risk distribution is driving the shift.
 
 ### Task 1: Implement PSI from scratch
 
@@ -153,19 +150,18 @@ Requirements:
 
 ### Task 2: Verify against the library
 
-Run `PSICalculator` on the same data and compare.
+Run `psi()` on the same data and compare.
 
 ```python
-psi_calc   = PSICalculator(n_bins=10)
-psi_result = psi_calc.calculate(
+psi_val = psi(
     reference=pred_ref,
     current=pred_cur,
     exposure_ref=exposure_ref,
     exposure_cur=exposure_cur,
 )
-print(f"Library PSI (exposure-weighted): {psi_result.psi:.4f}")
+print(f"Library PSI (exposure-weighted): {psi_val:.4f}")
 print(f"Manual PSI (unweighted):         {psi_manual:.4f}")
-print(f"Traffic light: {psi_result.traffic_light}")
+print("(green if < 0.10, amber if 0.10-0.25, red if > 0.25)")
 ```
 
 **Question 2a:** Why does the library result differ from your manual result? The library accepts `exposure_ref` and `exposure_cur` arguments. Write one paragraph explaining what the exposure-weighted PSI measures and why unweighted PSI can mislead on insurance data. Give a concrete example of the type of seasonal portfolio composition that would cause unweighted PSI to flag a false positive.
@@ -271,7 +267,6 @@ plt.show()
 ### Task 1: Run CSI on all model features
 
 ```python
-csi_calc    = CSICalculator(n_bins=10)
 csi_results = {}
 
 for feature in FEATURES:
@@ -290,7 +285,7 @@ print(f"{'Feature':<25} {'CSI':>8}  {'Status'}")
 print("-" * 45)
 for feature, result in sorted(csi_results.items(), key=lambda x: x[1].csi, reverse=True):
     flag = " <-- investigate" if result.csi > 0.20 else ""
-    print(f"{feature:<25} {result.csi:>8.4f}  {result.traffic_light}{flag}")
+    print(f"{feature:<25} {result:>8.4f}{flag}")
 ```
 
 ### Task 2: Plot distribution comparisons for flagged features
@@ -321,7 +316,7 @@ for feature in CAT_FEATURES:
     print(f"  Missing in current:  {sorted(missing_cats) if missing_cats else 'none'}")
 ```
 
-**Question 3:** If a new `vehicle_group` category appears in current data, explain why `CSICalculator` does not raise an exception and instead produces a valid (if conservative) CSI. What smoothing technique handles the zero-proportion bin? When would you need to investigate the new category further, even if the CSI is below the amber threshold?
+**Question 3:** If a new `vehicle_group` category appears in current data, explain why `csi()` does not raise an exception and instead produces a valid (if conservative) CSI. What smoothing technique handles the zero-proportion bin? When would you need to investigate the new category further, even if the CSI is below the amber threshold?
 
 ### Task 4: Connect CSI results to the score PSI
 
@@ -357,7 +352,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-**Answer to Question 3:** `CSICalculator` applies a small smoothing constant (1e-4) to any bin that has zero proportion in either the reference or current distribution before computing the log ratio. This prevents division by zero and undefined logarithms while keeping the contribution to CSI finite. A new category that was absent from reference has reference proportion ≈ 0 (after smoothing) and non-zero current proportion, producing a large but finite positive contribution.
+**Answer to Question 3:** `csi()` (via the underlying `psi()` call) applies a small smoothing constant (1e-4) to any bin that has zero proportion in either the reference or current distribution before computing the log ratio. This prevents division by zero and undefined logarithms while keeping the contribution to CSI finite. A new category that was absent from reference has reference proportion ≈ 0 (after smoothing) and non-zero current proportion, producing a large but finite positive contribution.
 
 Further investigation is warranted even when CSI is below amber if the new category maps to a high-risk cohort — for example, a new van hire segment that has never been modelled. The CSI may be green simply because the new category is small in volume, but the individual risk level could be far outside the model's training distribution.
 
@@ -374,7 +369,6 @@ Further investigation is warranted even when CSI is below amber if the new categ
 ### Task 1: Portfolio-level A/E
 
 ```python
-ae_calc = AERatio()
 
 actual_cur  = df_current["claim_count"].to_numpy().astype(float)
 
@@ -384,11 +378,11 @@ ae_portfolio = ae_calc.calculate(
     exposure=exposure_cur,
 )
 
-print(f"Portfolio A/E:    {ae_portfolio.ratio:.4f}")
-print(f"95% CI:           [{ae_portfolio.ci_lower:.4f}, {ae_portfolio.ci_upper:.4f}]")
+print(f"Portfolio A/E:    {ae_result["ae"]:.4f}")
+print(f"95% CI:           [{ae_result["lower"]:.4f}, {ae_result["upper"]:.4f}]")
 print(f"Actual claims:    {actual_cur.sum():.0f}")
 print(f"Expected claims:  {expected_cur.sum():.1f}")
-print(f"Traffic light:    {ae_portfolio.traffic_light}")
+print(f"Traffic light:    {"green/amber/red"}")
 ```
 
 **Question 1:** The 95% CI formula under a Poisson assumption is approximately:
@@ -397,7 +391,7 @@ print(f"Traffic light:    {ae_portfolio.traffic_light}")
 [A/E - 1.96 * sqrt(A) / E,   A/E + 1.96 * sqrt(A) / E]
 ```
 
-where A = sum of actual claims and E = sum of expected claims. Compute this manually for the portfolio result above and verify it matches `ae_portfolio.ci_lower` and `ae_portfolio.ci_upper` (within rounding). Then explain in plain English what the confidence interval is telling a pricing analyst — not a statistician.
+where A = sum of actual claims and E = sum of expected claims. Compute this manually for the portfolio result above and verify it matches `ae_result["lower"]` and `ae_result["upper"]` (within rounding). Then explain in plain English what the confidence interval is telling a pricing analyst — not a statistician.
 
 ### Task 2: Segment-level A/E breakdown
 
@@ -425,15 +419,15 @@ for low, high, label in age_bands:
     if seg.shape[0] == 0:
         continue
 
-    result = ae_calc.calculate(
+    result = ae_ratio_ci(
         actual=seg["claim_count"].to_numpy().astype(float),
-        expected=seg["expected"].to_numpy(),
-        exposure=seg["exposure"].to_numpy(),
+        predicted=seg["expected"].to_numpy(),
+        method="poisson",
     )
     print(
-        f"{label:<10} {result.ratio:>8.4f}  {result.ci_lower:>10.4f}  "
-        f"{result.ci_upper:>10.4f}  {seg['claim_count'].sum():>8.0f}  "
-        f"{seg['expected'].sum():>10.1f}  {result.traffic_light}"
+        f"{label:<10} {result["ae"]:>8.4f}  {result["lower"]:>10.4f}  "
+        f"{result["upper"]:>10.4f}  {seg['claim_count'].sum():>8.0f}  "
+        f"{seg['expected'].sum():>10.1f}  {result["band"]}"
     )
 ```
 
@@ -475,7 +469,7 @@ margin   = 1.96 * np.sqrt(A) / E
 ci_lo    = ae_point - margin
 ci_hi    = ae_point + margin
 print(f"Manual: A/E={ae_point:.4f}, CI=[{ci_lo:.4f}, {ci_hi:.4f}]")
-# Should match ae_portfolio.ci_lower and ae_portfolio.ci_upper
+# Should match ae_result["lower"] and ae_result["upper"]
 ```
 
 **Answer to Question 1:** The CI tells you the range of A/E values you would regard as consistent with the model being correctly calibrated given the amount of random variation you expect from a Poisson claims process. If 1.0 is inside the interval, you cannot rule out that the apparent over- or under-prediction is just bad luck from a finite number of claims. If 1.0 is outside the interval, you have 95% confidence that the model is systematically off, not just unlucky.
@@ -497,24 +491,29 @@ print(f"Manual: A/E={ae_point:.4f}, CI=[{ci_lo:.4f}, {ci_hi:.4f}]")
 ### Task 1: Compute Gini drift
 
 ```python
-gini_calc = GiniDrift()
 
 y_ref = (df_reference["claim_count"] > 0).to_numpy().astype(int)
 y_cur = (df_current["claim_count"] > 0).to_numpy().astype(int)
 
-gini_result = gini_calc.calculate(
-    y_ref=y_ref,
-    pred_ref=pred_ref,
-    y_cur=y_cur,
-    pred_cur=pred_cur,
+gini_ref = gini_coefficient(actual_ref, pred_ref)
+gini_cur = gini_coefficient(actual_cur, pred_cur)
+
+gini_result = gini_drift_test(
+    reference_gini=gini_ref,
+    current_gini=gini_cur,
+    reference_actual=actual_ref,
+    reference_predicted=pred_ref,
+    current_actual=actual_cur,
+    current_predicted=pred_cur,
+    n_bootstrap=200,
 )
 
-print(f"Gini (reference):  {gini_result.gini_ref:.4f}")
-print(f"Gini (current):    {gini_result.gini_cur:.4f}")
-print(f"Change:            {gini_result.gini_cur - gini_result.gini_ref:+.4f}")
-print(f"Z-statistic:       {gini_result.z_stat:.4f}")
+print(f"Gini (reference):  {gini_result.reference_gini:.4f}")
+print(f"Gini (current):    {gini_result.current_gini:.4f}")
+print(f"Change:            {gini_result.current_gini - gini_result.reference_gini:+.4f}")
+print(f"Z-statistic:       {gini_result.z_statistic:.4f}")
 print(f"P-value:           {gini_result.p_value:.4f}")
-print(f"Traffic light:     {gini_result.traffic_light}")
+print(f"Traffic light:     {gini_result["band"]}")
 ```
 
 ### Task 2: Plot the ROC curves
@@ -527,8 +526,8 @@ from sklearn.metrics import roc_curve, auc
 fig, axes = plt.subplots(1, 2, figsize=(13, 5))
 
 for ax, y, pred, label, colour, gini in [
-    (axes[0], y_ref, pred_ref, "Reference", "steelblue", gini_result.gini_ref),
-    (axes[1], y_cur, pred_cur, "Current",   "tomato",    gini_result.gini_cur),
+    (axes[0], y_ref, pred_ref, "Reference", "steelblue", gini_result.reference_gini),
+    (axes[1], y_cur, pred_cur, "Current",   "tomato",    gini_result.current_gini),
 ]:
     fpr, tpr, _ = roc_curve(y, pred)
     ax.plot(fpr, tpr, color=colour, linewidth=2,
@@ -540,7 +539,7 @@ for ax, y, pred, label, colour, gini in [
     ax.legend()
 
 plt.suptitle(
-    f"Gini drift: {gini_result.gini_ref:.3f} → {gini_result.gini_cur:.3f}  "
+    f"Gini drift: {gini_result.reference_gini:.3f} → {gini_result.current_gini:.3f}  "
     f"(p = {gini_result.p_value:.3f})",
     fontsize=12,
 )
@@ -568,9 +567,9 @@ for low, high, label in [(17, 25, "17-24"), (40, 60, "40-59")]:
         pred_cur= pred_cur[cur_mask],
     )
     print(
-        f"{label}: ref={seg_result.gini_ref:.4f}, "
-        f"cur={seg_result.gini_cur:.4f}, "
-        f"change={seg_result.gini_cur - seg_result.gini_ref:+.4f}, "
+        f"{label}: ref={seg_result.reference_gini:.4f}, "
+        f"cur={seg_result.current_gini:.4f}, "
+        f"change={seg_result.current_gini - seg_result.reference_gini:+.4f}, "
         f"p={seg_result.p_value:.4f}"
     )
 ```
@@ -586,7 +585,7 @@ for low, high, label in [(17, 25, "17-24"), (40, 60, "40-59")]:
 <details>
 <summary>Solution — Exercise 4</summary>
 
-**Answer to 4a:** Inspect the results from your run. If `ae_portfolio.traffic_light` is GREEN and `gini_result.p_value` > 0.05, the model is performing as expected — no failure mode active. If A/E is amber with CI excluding 1.0 but Gini is stable (p > 0.10), this is calibration failure only. If Gini p-value < 0.05 and the drop exceeds 0.03, that is discrimination failure regardless of the A/E.
+**Answer to 4a:** Inspect the results from your run. If `"green/amber/red"` is GREEN and `gini_result.p_value` > 0.05, the model is performing as expected — no failure mode active. If A/E is amber with CI excluding 1.0 but Gini is stable (p > 0.10), this is calibration failure only. If Gini p-value < 0.05 and the drop exceeds 0.03, that is discrimination failure regardless of the A/E.
 
 **Answer to 4b:** Step 1: Apply a temporary recalibration factor (1/1.12 ≈ 0.893) to restore the portfolio average to correct calibration. Document the factor, the trigger, and the date in the recalibration history table. Step 2: Immediately initiate a retraining assessment. A falling Gini means the model's risk ranking is degrading — applying a multiplicative scalar to all predictions preserves the ranking, so the recalibration does nothing to fix the discrimination problem. Step 3: Schedule a model retraining on data from the current period. Step 4: Escalate to the head of pricing if the Gini drop persists into the following month.
 
@@ -611,18 +610,19 @@ report = MonitoringReport(
     current_date="2023-12-31",
 )
 
-report.add_psi(psi_result)
+# MonitoringReport is constructed with all inputs — no add_*() methods
 
 for feature, result in csi_results.items():
-    report.add_csi(result)
+    # (CSI is included via feature_df_reference/feature_df_current)
 
-report.add_ae(ae_portfolio)
-report.add_gini_drift(gini_result)
+# All metrics are passed at construction
+# MonitoringReport runs gini_drift_test() internally
 
-summary = report.summary()
+report_dict = report.to_dict()
+summary = report_dict  # for backward-compatible access in this exercise
 
 print("=" * 60)
-print(f"OVERALL STATUS: {summary['overall_traffic_light']}")
+print(f"OVERALL STATUS: {report.recommendation}")
 print("=" * 60)
 print()
 
@@ -816,9 +816,9 @@ Significant Gini drop                    RETRAIN          Statistically signific
 ### Task 2: Compute the recalibration factor from your actual data
 
 ```python
-if ae_portfolio.ratio > 0:
-    recal_factor = 1.0 / ae_portfolio.ratio
-    print(f"A/E ratio:            {ae_portfolio.ratio:.4f}")
+if ae_result["ae"] > 0:
+    recal_factor = 1.0 / ae_result["ae"]
+    print(f"A/E ratio:            {ae_result["ae"]:.4f}")
     print(f"Recalibration factor: {recal_factor:.4f}")
     print(f"Interpretation: multiply all frequency predictions by {recal_factor:.4f}")
     print()

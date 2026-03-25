@@ -510,7 +510,7 @@ for name, coef in sorted(zip(ix_cols, ix_coefs), key=lambda x: abs(x[1]), revers
 
 # Quantify the improvement
 int_deviance = float(comparison.filter(pl.col("model") == "glm_with_interactions")["deviance"][0])
-int_aic      = float(comparison.filter(pl.col("model") == "glm_with_interactions")["aic"][0])
+int_aic      = float(comparison.filter(pl.col("model") == "glm_with_interactions")["deviance_aic"][0])
 int_n_params = int(comparison.filter(pl.col("model") == "glm_with_interactions")["n_params"][0])
 
 delta_deviance     = int_deviance - base_deviance
@@ -586,7 +586,7 @@ mlflow.set_experiment(EXPERIMENT_NAME)
 
 with mlflow.start_run(run_name="baseline_glm") as run_base:
     mlflow.log_metric("deviance",   float(base_deviance))
-    mlflow.log_metric("aic",        float(base_aic))
+    mlflow.log_metric("deviance_aic", float(base_aic))
     mlflow.log_metric("n_params",   int(base_n_params))
     mlflow.log_param("family",      "poisson")
     mlflow.log_param("interactions", "none")
@@ -596,7 +596,7 @@ with mlflow.start_run(run_name="baseline_glm") as run_base:
 
 with mlflow.start_run(run_name="glm_with_interactions") as run_int:
     mlflow.log_metric("deviance",               float(int_deviance))
-    mlflow.log_metric("aic",                    float(int_aic))
+    mlflow.log_metric("deviance_aic",           float(int_aic))
     mlflow.log_metric("n_params",               int(int_n_params))
     mlflow.log_metric("delta_deviance",         float(delta_deviance))
     mlflow.log_metric("delta_deviance_pct",     float(delta_deviance_pct))
@@ -617,7 +617,7 @@ with mlflow.start_run(run_name="glm_with_interactions") as run_int:
 
 print()
 print("Both models logged. In Databricks: Experiments -> module_10_interactions")
-print("Select both runs -> Compare to see deviance, AIC, and n_params side by side.")
+print("Select both runs -> Compare to see deviance, deviance_aic, and n_params side by side.")
 print("Under the enhanced run -> Artifacts -> interaction_detection/interaction_table.csv")
 
 # COMMAND ----------
