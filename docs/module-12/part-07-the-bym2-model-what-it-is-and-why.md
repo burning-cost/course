@@ -52,13 +52,13 @@ b_i = sigma * (sqrt(rho) * phi*_i + sqrt(1 - rho) * theta_i)
 phi   ~ ICAR(W)           # structured; prior encodes neighbour similarity
 theta ~ Normal(0, 1)      # unstructured; independent per area
 sigma ~ HalfNormal(1)     # total territory scale
-rho   ~ Beta(0.5, 0.5)    # proportion due to spatial structure; Jeffrey's prior
+rho   ~ Beta(0.5, 0.5)    # proportion due to spatial structure; Jeffreys' prior
 alpha ~ Normal(0, 1)      # intercept (overall log-rate)
 ```
 
 E_i is exposure (policy-years). The log(E_i) term is a fixed offset -- it is not estimated, just added to the linear predictor to convert from log-rate to log-expected-claims.
 
-The Beta(0.5, 0.5) prior on rho is Jeffrey's prior: it is flat on the logit scale and gives equal prior probability to "entirely spatial" and "entirely IID". It does not push the model towards either extreme.
+The Beta(0.5, 0.5) prior on rho is Jeffreys' prior: it is flat on the logit scale and gives equal prior probability to "entirely spatial" and "entirely IID". It does not push the model towards either extreme.
 
 ### Two-stage vs. integrated
 

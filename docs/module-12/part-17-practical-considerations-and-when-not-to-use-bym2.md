@@ -5,7 +5,7 @@
 The default priors in the BYM2 model are weakly informative:
 
 - `sigma ~ HalfNormal(1)`: this allows territory SDs up to about 2 on the log scale, corresponding to relativities from roughly 0.13 to 7.4. For UK personal lines, the actual range is much narrower -- roughly 0.6 to 1.6. So this prior is effectively uninformative.
-- `rho ~ Beta(0.5, 0.5)`: Jeffrey's prior, symmetric around 0.5.
+- `rho ~ Beta(0.5, 0.5)`: Jeffreys' prior, symmetric around 0.5.
 
 We recommend checking prior sensitivity by fitting with `sigma ~ HalfNormal(0.5)` (more regularisation) and comparing the posterior of sigma and rho. If the posteriors are similar, the data are informative and the prior does not matter much. If they shift substantially, the data are sparse and you should use the more regularising prior.
 
