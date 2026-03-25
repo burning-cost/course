@@ -36,25 +36,25 @@ from insurance_monitoring.discrimination import gini_coefficient, gini_drift_tes
 # ---------------------------------------------------------------------------
 # Load data and split into reference / current windows
 # ---------------------------------------------------------------------------
-df = load_motor()
+df = load_motor(polars=True)
 
-# Reference period: policies with accident_year <= 2022
-# Current period:   policies with accident_year == 2023
-df_reference = df.filter(pl.col("accident_year") <= 2022)
-df_current   = df.filter(pl.col("accident_year") == 2023)
+# Reference period: policies with inception_year <= 2022
+# Current period:   policies with inception_year == 2023
+df_reference = df.filter(pl.col("inception_year") <= 2022)
+df_current   = df.filter(pl.col("inception_year") == 2023)
 
 print(f"Reference: {df_reference.shape[0]:,} rows")
 print(f"Current:   {df_current.shape[0]:,} rows")
 print()
-print("Reference accident years:", df_reference["accident_year"].unique().sort().to_list())
-print("Current accident years:  ", df_current["accident_year"].unique().sort().to_list())
+print("Reference inception years:", df_reference["inception_year"].unique().sort().to_list())
+print("Current inception years:  ", df_current["inception_year"].unique().sort().to_list())
 
 # ---------------------------------------------------------------------------
 # Train a CatBoost frequency model on the reference period
 # ---------------------------------------------------------------------------
-FEATURES     = ["driver_age", "vehicle_age", "vehicle_group", "region",
-                 "ncb_years", "annual_mileage"]
-CAT_FEATURES = ["vehicle_group", "region"]
+FEATURES     = ["driver_age", "vehicle_age", "vehicle_group", "area",
+                 "ncd_years", "annual_mileage"]
+CAT_FEATURES = ["vehicle_group", "area"]
 
 rng      = np.random.default_rng(seed=42)
 n_ref    = df_reference.shape[0]
@@ -302,7 +302,7 @@ For any feature with CSI > 0.10, produce a side-by-side histogram of the referen
 
 ### Task 3: Categorical feature category check
 
-`vehicle_group` and `region` are categorical. Check whether any categories are new in the current period (present in current, absent in reference) or have disappeared (present in reference, absent in current).
+`vehicle_group` and `area` are categorical. Check whether any categories are new in the current period (present in current, absent in reference) or have disappeared (present in reference, absent in current).
 
 ```python
 for feature in CAT_FEATURES:

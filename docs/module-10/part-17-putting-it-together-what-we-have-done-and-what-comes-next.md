@@ -6,15 +6,17 @@ In this module we:
 
 1. Understood why a correctly-specified GLM with main effects still misses interaction terms, and why manual 2D A/E plots are an incomplete search strategy.
 
-2. Trained a CANN on the residuals of the baseline Poisson GLM. The skip-connection architecture forced the network to learn only what the GLM could not express.
+2. Resampled claim counts from the `load_motor` DGP with two planted interactions (age band × vehicle group at +0.30 log-units; NCD years × has_convictions at +0.20 log-units), giving ground truth to validate the detector against.
 
-3. Applied NID to the trained CANN weight matrices to get a ranked list of candidate interaction pairs in milliseconds.
+3. Trained a CANN on the residuals of the baseline Poisson GLM. The skip-connection architecture forced the network to learn only what the GLM could not express.
 
-4. Tested the top 15 candidates using likelihood-ratio tests with Bonferroni correction, confirming the two planted interactions (age band × vehicle group and NCD × has_convictions) as statistically significant.
+4. Applied NID to the trained CANN weight matrices to get a ranked list of candidate interaction pairs in milliseconds.
 
-5. Rebuilt the GLM jointly with the approved interaction terms, achieving a deviance improvement of around 1.5-2% with 20-25 new parameters.
+5. Tested the top 15 candidates using likelihood-ratio tests with Bonferroni correction, confirming the two planted interactions (`age_band × vehicle_group` and `ncd_years × has_convictions`) as statistically significant.
 
-6. Logged everything to MLflow and (optionally) validated with SHAP interaction values from CatBoost.
+6. Rebuilt the GLM jointly with the approved interaction terms, achieving a deviance improvement of around 1.5–2% with 20–25 new parameters.
+
+7. Logged everything to MLflow and (optionally) validated with SHAP interaction values from CatBoost.
 
 ### What comes next
 

@@ -47,8 +47,8 @@ import numpy as np
 
 feature_names = model.feature_names_
 
-ref_pool = Pool(df_reference.select(feature_names).to_pandas(), cat_features=["region"])
-cur_pool = Pool(df_current.select(feature_names).to_pandas(), cat_features=["region"])
+ref_pool = Pool(df_reference.select(feature_names).to_pandas(), cat_features=["area"])
+cur_pool = Pool(df_current.select(feature_names).to_pandas(), cat_features=["area"])
 
 pred_ref = model.predict(ref_pool)
 pred_cur = model.predict(cur_pool)

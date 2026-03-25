@@ -32,7 +32,7 @@ Here is the full sequence of cells in the monitoring notebook, in order:
 3. Imports
 4. Configuration (CATALOG, SCHEMA, dates, model name)
 5. Schema creation
-6. Load data: `df = load_motor()`, split into reference and current
+6. Load data: `df = load_motor(polars=True)`, split into reference and current
 7. Load model from MLflow registry
 8. Generate predictions: `pred_ref`, `pred_cur`
 9. PSI on score distribution

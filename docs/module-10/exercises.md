@@ -68,7 +68,7 @@ features = ["age_band", "vehicle_group", "ncd_years", "conviction_points", "area
 
 **Task 2.** The pair with the widest A/E spread should be `age_band × vehicle_group` or very close to it. Now produce the full 2D A/E table for that pair: one row per (age_band, vehicle_group) cell. Print the five cells with the highest A/E ratios. Do the cells that are worst for the GLM correspond to what you would expect from the planted interaction (young driver, high vehicle group)?
 
-**Task 3.** Now do the same for `ncd_years × conviction_points`. Print the 2D A/E table. The interaction planted in the data adds a 0.20 log-unit penalty when `ncd_years == 0` AND `conviction_points > 0`. In relativities, `exp(0.20) ≈ 1.22`. Does the A/E table for the cell (ncd_years=0, conviction_points=9) show a ratio near 1.22? Why might it differ?
+**Task 3.** Now do the same for `ncd_years × conviction_points`. Print the 2D A/E table. The interaction planted in the data adds a 0.20 log-unit penalty when `ncd_years >= 3` AND `conviction_points > 0`. In relativities, `exp(0.20) ≈ 1.22`. Does the A/E table for cells with high ncd_years (3, 4, or 5) and high conviction_points show elevated A/E ratios relative to cells with the same conviction_points but low ncd_years? Why might the effect be diluted in the raw 2D table?
 
 **Task 4.** Now check the pair `annual_mileage × conviction_points`. The data has no planted interaction between these two factors. Compute its 2D A/E table and report: what is the `ae_spread`? Compare it to the spreads for the two planted pairs. This is the false positive risk of manual 2D analysis: random variation can produce non-trivial spread even when no interaction exists.
 
@@ -155,10 +155,12 @@ ae_ncd_cv = (
 )
 print("\nTask 3: ncd_years x conviction_points A/E table:")
 print(ae_ncd_cv)
-cell_0_9 = ae_ncd_cv.filter(
-    (pl.col("ncd_years") == 0) & (pl.col("conviction_points") == 9)
+# Show cells where ncd_years >= 3 and conviction_points > 0 (the planted interaction cells)
+planted_cells = ae_ncd_cv.filter(
+    (pl.col("ncd_years") >= 3) & (pl.col("conviction_points") > 0)
 )
-print(f"\nPlanted cell (ncd=0, cv=9): A/E = {cell_0_9['ae_ratio'][0]:.3f}  (expected ~1.22)")
+mean_ae = planted_cells["ae_ratio"].mean()
+print(f"\nPlanted cells (ncd>=3, cv>0): mean A/E = {mean_ae:.3f}  (expected ~1.22)")
 
 # Task 4: annual_mileage x conviction_points -- no planted interaction
 ae_mil_cv = (
@@ -186,7 +188,7 @@ print(f"For 12 features: {12*11//2} pairs")
 **What you should see:**
 
 - `age_band × vehicle_group` should have the highest `ae_spread`, with the cell (17-21, 41-50) showing A/E around 1.25-1.35 (the 0.30 log-unit interaction maps to `exp(0.30) ≈ 1.35`).
-- `ncd_years × conviction_points` should have the second-highest spread, with the cell (0, 9) near 1.22.
+- `ncd_years × conviction_points` should have the second-highest spread. Cells where ncd_years >= 3 and conviction_points > 0 should show A/E ratios in the range 1.15-1.30 on average (the 0.20 log-unit interaction maps to exp(0.20) ≈ 1.22, but individual cells are noisy due to thin data).
 - `annual_mileage × conviction_points` will have a non-trivial spread -- somewhere in the range 0.15-0.30 -- despite having no planted interaction. This is pure noise, and it illustrates why the 2D A/E approach requires human judgement to separate signal from noise.
 
 **Task 5 answer:** With 6 features, you checked 15 pairs. With 12 features, you would check 66 pairs. The manual process selectively checks the pairs an actuary expects to be interesting, which means the unexpected interactions -- the ones that are genuinely surprising and therefore most likely to be missed in a real portfolio -- are never checked.
@@ -796,9 +798,9 @@ for name, coef in sorted(zip(ix_cols, ix_coefs), key=lambda x: abs(x[1]), revers
 
 **Task 4.** The planted interaction for `age_band × vehicle_group` was a log-additive 0.30 penalty for policies where `age_band ∈ {17-21, 22-25}` AND `vehicle_group ∈ {41-50}`. In the enhanced GLM, this interaction is represented as binary contrast columns: look for `_ix_age_band_17-21_X_vehicle_group_41-50` and `_ix_age_band_22-25_X_vehicle_group_41-50`. Find those coefficients and check whether they are close to +0.30. Why might they differ?
 
-**Task 5.** The second planted interaction (`ncd_years == 0` AND `conviction_points > 0`) was a log-additive 0.20 penalty. `ncd_years` is a continuous integer feature and `has_convictions` is stored as `pl.Int32` (not Categorical), so the library treats both as continuous and creates a single product column. Look for a column named `_ix_ncd_years_has_convictions` in the enhanced GLM's `feature_names_`. The coefficient should be close to +0.20.
+**Task 5.** The second planted interaction (`ncd_years >= 3` AND `conviction_points > 0`) was a log-additive 0.20 penalty. `ncd_years` is a continuous integer feature and `has_convictions` is stored as `pl.Int32` (not Categorical), so the library treats both as continuous and creates a single product column. Look for a column named `_ix_ncd_years_has_convictions` in the enhanced GLM's `feature_names_`. The coefficient should be positive and in the range +0.05 to +0.15.
 
-Note: because both features are numeric (not Categorical), the interaction is a plain product term: `ncd_years * has_convictions`. This captures the effect: when `has_convictions == 0`, the term is always zero; when `has_convictions == 1`, the term equals `ncd_years`. The planted interaction penalises `ncd_years == 0` and `has_convictions == 1` simultaneously — the product column correctly encodes this as a single slope that is non-zero only when both are active.
+Note: because both features are numeric (not Categorical), the interaction is a plain product term: `ncd_years * has_convictions`. The product is largest (3, 4, or 5) precisely when `ncd_years >= 3` and `has_convictions == 1` — the cells where the interaction was planted. A positive coefficient means the GLM has learned that extra risk accumulates with NCD years for convicted drivers, which is the planted effect. The coefficient will be smaller than +0.20 because the product column aggregates the effect across all ncd_years values, not just the >= 3 threshold.
 
 <details>
 <summary>Hint for Task 4</summary>
@@ -891,7 +893,7 @@ for pattern in target_patterns:
 # Both ncd_years and has_convictions are pl.Int32 (not Categorical), so the library
 # encodes the interaction as a plain product column: _ix_ncd_years_has_convictions
 print("\nTask 5: Planted interaction recovery (ncd_years x has_convictions)")
-print("  Planted: +0.20 log-units when ncd_years=0 and has_convictions=1")
+print("  Planted: +0.20 log-units when ncd_years >= 3 and has_convictions=1")
 print("  Library encoding: product term _ix_ncd_years_has_convictions (1 parameter)")
 ncd_ix_cols = [(c, enhanced_glm.coef_[coef_names.index(c)])
                for c in ix_cols if "ncd" in c or "conviction" in c]

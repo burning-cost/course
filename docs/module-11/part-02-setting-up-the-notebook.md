@@ -78,8 +78,8 @@ TABLES = {
 # -----------------------------------------------------------------------
 # Monitoring parameters
 # -----------------------------------------------------------------------
-REFERENCE_DATE = "2023-12-31"
-CURRENT_DATE   = "2024-06-30"
+REFERENCE_YEAR = 2022  # policies with inception_year <= this are "reference"
+CURRENT_YEAR   = 2023  # policies with inception_year == this are "current"
 
 MODEL_NAME    = "motor_frequency_catboost"
 MODEL_VERSION = "1"
@@ -89,8 +89,8 @@ N_BINS = 10  # PSI/CSI bin count. 10 is standard; reduce to 5 for sparse feature
 RUN_DATE = str(date.today())
 
 print(f"Run date:          {RUN_DATE}")
-print(f"Reference period:  {REFERENCE_DATE}")
-print(f"Current period:    {CURRENT_DATE}")
+print(f"Reference period:  inception_year <= {REFERENCE_YEAR}")
+print(f"Current period:    inception_year == {CURRENT_YEAR}")
 print(f"Catalog/schema:    {CATALOG}.{SCHEMA}")
 print(f"Model:             {MODEL_NAME} v{MODEL_VERSION}")
 ```
@@ -106,25 +106,21 @@ If you are on `hive_metastore` rather than Unity Catalog, remove `{CATALOG}.` fr
 
 ### Load the data
 
-We need two time windows: the reference window (the data the model was trained and validated on) and the current window (recent live policies). We use `load_motor()` and split by policy start date:
+We need two time windows: the reference window (the data the model was trained and validated on) and the current window (recent live policies). We use `load_motor(polars=True)` to get a Polars DataFrame and split by inception year:
 
 ```python
-df = load_motor()
+df = load_motor(polars=True)
 print(f"Total records: {df.shape[0]:,}")
+print(f"Columns: {df.columns}")
 
-df_reference = df.filter(
-    pl.col("policy_start_date") <= pl.lit(REFERENCE_DATE).str.to_date()
-)
+df_reference = df.filter(pl.col("inception_year") <= REFERENCE_YEAR)
 
-df_current = df.filter(
-    (pl.col("policy_start_date") > pl.lit(REFERENCE_DATE).str.to_date()) &
-    (pl.col("policy_start_date") <= pl.lit(CURRENT_DATE).str.to_date())
-)
+df_current = df.filter(pl.col("inception_year") == CURRENT_YEAR)
 
 print(f"Reference records: {df_reference.shape[0]:,}")
 print(f"Current records:   {df_current.shape[0]:,}")
 ```
 
-You should see roughly 70-80% of records in the reference set and 20-30% in the current set, depending on the date distribution in the synthetic dataset. If the current set is empty, check that `CURRENT_DATE` is after `REFERENCE_DATE` and that the dataset contains records in that range.
+`load_motor()` returns a pandas DataFrame by default; pass `polars=True` to get a Polars DataFrame directly. The dataset uses `inception_year` (integer, 2019–2023) as the cohort identifier — there is no `policy_start_date` column. Split on `inception_year` to get stable reference and current windows. You should see roughly 80% of records in the reference set and 20% in the current set.
 
 We now have everything we need. The next part explains what model drift actually is before we start measuring it.

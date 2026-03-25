@@ -2,7 +2,7 @@
 
 ### What CSI measures
 
-CSI is PSI applied to individual features rather than the score distribution. You run it on each input feature to find out which ones have shifted. A model with 15 features might have PSI flagging a significant score shift; CSI tells you that 13 features are stable and 2 features — say, driver age and region — have drifted materially. That narrows the investigation considerably.
+CSI is PSI applied to individual features rather than the score distribution. You run it on each input feature to find out which ones have shifted. A model with 15 features might have PSI flagging a significant score shift; CSI tells you that 13 features are stable and 2 features — say, driver age and area — have drifted materially. That narrows the investigation considerably.
 
 The formula is identical to PSI. The difference is what you are computing it on: instead of the predicted score, you compute it on the raw feature values.
 
@@ -36,11 +36,11 @@ The `band` column uses the PSI thresholds: `green` (< 0.10), `amber` (0.10–0.2
 
 ### Handling categorical features
 
-The motor dataset has categorical features like `region`. `csi()` handles these through the same PSI formula: each distinct value is treated as a bin. The calculation still works, but inspect the raw category distribution to see if a new category has appeared:
+The motor dataset has categorical features like `area`. `csi()` handles these through the same PSI formula: each distinct value is treated as a bin. The calculation still works, but inspect the raw category distribution to see if a new category has appeared:
 
 ```python
 # Check for new categories in categorical features
-cat_features = ["region"]
+cat_features = ["area"]
 
 for feature in cat_features:
     ref_cats = set(df_reference[feature].unique().to_list())

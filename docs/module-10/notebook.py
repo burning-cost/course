@@ -62,7 +62,7 @@ from insurance_interactions import (
     DetectorConfig,
     build_glm_with_interactions,
 )
-from insurance_datasets import load_motor
+from insurance_datasets import load_motor, TRUE_FREQ_PARAMS
 
 print(f"Today: {date.today()}")
 print("insurance-interactions version:", __import__("insurance_interactions").__version__)
@@ -74,15 +74,17 @@ print("All imports: OK")
 # MAGIC %md
 # MAGIC ## 1. Generate synthetic motor portfolio
 # MAGIC
-# MAGIC The same 100,000-policy portfolio used throughout the course, with two planted
-# MAGIC interactions added explicitly so we can verify the detector finds them:
+# MAGIC The `load_motor` DGP is purely additive main effects. We extend it by resampling
+# MAGIC claim counts with two planted interaction effects, giving ground truth to validate
+# MAGIC the detector against.
 # MAGIC
 # MAGIC **Interaction 1:** `driver_age < 25` AND `vehicle_group > 35`
-# MAGIC Young drivers in high-group vehicles are supermultiplicatively risky.
-# MAGIC The GLM multiplies two large factors; the true effect is larger than that product.
+# MAGIC Young drivers in high-group vehicles are supermultiplicatively risky. +0.30 log-units.
 # MAGIC
-# MAGIC **Interaction 2:** `ncd_years == 0` AND `conviction_points > 0`
-# MAGIC Zero NCD combined with convictions adds risk beyond what the main effects predict.
+# MAGIC **Interaction 2:** `ncd_years >= 3` AND `conviction_points > 0`
+# MAGIC Convicted drivers who have accumulated substantial NCD are extra risky. +0.20 log-units.
+# MAGIC The product `ncd_years * has_convictions` is largest for this group, so the GLM's
+# MAGIC product interaction term can represent the effect correctly.
 # MAGIC
 # MAGIC The detector should rank `age_band × vehicle_group` and `ncd_years × has_convictions`
 # MAGIC in the top 5 NID candidates. If neither appears, the CANN has not converged
@@ -92,16 +94,56 @@ print("All imports: OK")
 
 df_raw = load_motor(n_policies=100_000, seed=42, polars=True)
 
-# Plant the two known interactions
-df = df_raw.with_columns(
-    (pl.col("conviction_points") > 0).cast(pl.Int32).alias("has_convictions"),
-    (
-        (pl.col("driver_age") < 25) & (pl.col("vehicle_group") > 35)
-    ).cast(pl.Int32).alias("young_high_vg"),
-    (
-        (pl.col("ncd_years") == 0) & (pl.col("conviction_points") > 0)
-    ).cast(pl.Int32).alias("zero_ncd_convicted"),
+rng = np.random.default_rng(seed=0)   # separate seed from the DGP seed
+
+driver_age_raw    = df_raw["driver_age"].to_numpy()
+vehicle_group_raw = df_raw["vehicle_group"].to_numpy()
+ncd_years_raw     = df_raw["ncd_years"].to_numpy()
+conviction_pts    = df_raw["conviction_points"].to_numpy()
+exposure_raw      = df_raw["exposure"].to_numpy()
+area_raw          = df_raw["area"].to_numpy()
+
+# Interaction masks
+ix1_mask     = (driver_age_raw < 25) & (vehicle_group_raw > 35)
+has_conv_mask = conviction_pts > 0
+ix2_mask     = (ncd_years_raw >= 3) & has_conv_mask
+
+# Reconstruct the base DGP log-frequency (matches TRUE_FREQ_PARAMS)
+# Age effect blends linearly from the young effect down to zero between ages 25-30
+age_eff = np.zeros(len(df_raw))
+age_eff[driver_age_raw < 25] = TRUE_FREQ_PARAMS["driver_age_young"]
+age_eff[driver_age_raw >= 70] = TRUE_FREQ_PARAMS["driver_age_old"]
+blend = (driver_age_raw >= 25) & (driver_age_raw < 30)
+age_eff[blend] = TRUE_FREQ_PARAMS["driver_age_young"] * (30 - driver_age_raw[blend]) / 5.0
+
+area_eff = np.zeros(len(df_raw))
+for band, key in [("B", "area_B"), ("C", "area_C"), ("D", "area_D"),
+                  ("E", "area_E"), ("F", "area_F")]:
+    area_eff[area_raw == band] = TRUE_FREQ_PARAMS[key]
+
+log_lambda = (
+    TRUE_FREQ_PARAMS["intercept"]
+    + TRUE_FREQ_PARAMS["vehicle_group"] * vehicle_group_raw
+    + age_eff
+    + TRUE_FREQ_PARAMS["ncd_years"] * ncd_years_raw
+    + TRUE_FREQ_PARAMS["has_convictions"] * has_conv_mask.astype(float)
+    + area_eff
+    + np.log(np.clip(exposure_raw, 1e-6, None))
+    + 0.30 * ix1_mask.astype(float)   # Interaction 1: +0.30 log-units
+    + 0.20 * ix2_mask.astype(float)   # Interaction 2: +0.20 log-units
 )
+
+claim_count_with_ix = rng.poisson(np.exp(log_lambda))
+
+# Build the working DataFrame with interaction-augmented claim counts
+df = df_raw.with_columns([
+    pl.Series("claim_count", claim_count_with_ix),
+    (pl.col("conviction_points") > 0).cast(pl.Int32).alias("has_convictions"),
+    ((pl.col("driver_age") < 25) & (pl.col("vehicle_group") > 35)
+     ).cast(pl.Int32).alias("young_high_vg"),
+    ((pl.col("ncd_years") >= 3) & (pl.col("conviction_points") > 0)
+     ).cast(pl.Int32).alias("ncd3_convicted"),
+])
 
 claim_count  = df["claim_count"].to_numpy()
 exposure     = df["exposure"].to_numpy()
@@ -110,13 +152,13 @@ print(f"Policies:     {len(df):,}")
 print(f"Claim count:  {claim_count.sum():,}")
 print(f"Mean freq:    {claim_count.sum() / exposure.sum():.4f}")
 
-young_high    = df.filter(pl.col("young_high_vg") == 1)
-zero_ncd_conv = df.filter(pl.col("zero_ncd_convicted") == 1)
+young_high = df.filter(pl.col("young_high_vg") == 1)
+ncd3_conv  = df.filter(pl.col("ncd3_convicted") == 1)
 
-print(f"\nyoung_high_vg group:      {len(young_high):,} policies, "
+print(f"\nyoung_high_vg group:   {len(young_high):,} policies, "
       f"freq={young_high['claim_count'].sum() / young_high['exposure'].sum():.4f}")
-print(f"zero_ncd_convicted group: {len(zero_ncd_conv):,} policies, "
-      f"freq={zero_ncd_conv['claim_count'].sum() / zero_ncd_conv['exposure'].sum():.4f}")
+print(f"ncd3_convicted group:  {len(ncd3_conv):,} policies, "
+      f"freq={ncd3_conv['claim_count'].sum() / ncd3_conv['exposure'].sum():.4f}")
 print()
 print("Both groups should show higher frequency than the product of their main effects.")
 print("The GLM will underfit them; the CANN will learn the gap.")
@@ -344,7 +386,7 @@ print("is on the response scale (positive values summing to y.sum()), not log sc
 # MAGIC
 # MAGIC Both planted interactions should appear in the top 5:
 # MAGIC - `age_band × vehicle_group` (supermultiplicative risk for young drivers in high groups)
-# MAGIC - `ncd_years × has_convictions` (zero NCD plus conviction adds extra risk)
+# MAGIC - `ncd_years × has_convictions` (convicted drivers with substantial NCD add extra risk)
 
 # COMMAND ----------
 
@@ -540,39 +582,27 @@ print("improvement justifies the parameter cost.")
 # MAGIC %md
 # MAGIC ## 9. Predicted frequency comparison
 # MAGIC
-# MAGIC Compare baseline and enhanced GLM predicted frequencies on the two groups
-# MAGIC that contain the planted interactions. The enhanced GLM should predict higher
-# MAGIC frequencies for these groups, closing the gap to the observed values.
+# MAGIC Compare baseline GLM predicted frequencies on the two groups that contain
+# MAGIC the planted interactions. The base GLM should underestimate both groups —
+# MAGIC this is the residual the CANN was trained to detect.
 
 # COMMAND ----------
 
-# To score with the enhanced GLM we need to reconstruct the interaction columns.
-# build_glm_with_interactions adds columns named _ix_{feat1}_{level}_X_{feat2}_{level}
-# for cat x cat, or _ix_{feat1}_{level}_{feat2} for cat x continuous.
-# For illustration we compare the two groups using the comparison table;
-# in production, reconstruct X_int using the same logic build_glm_with_interactions uses.
+# Group-level observed vs fitted comparison using the base GLM
+# (The enhanced GLM requires reconstructing the interaction columns — see Part 13
+# of the tutorial for the column naming conventions and a production scoring function.)
+young_mask     = (driver_age_arr < 25) & (vehicle_group_arr > 35)
+ncd3_conv_mask = (df["ncd_years"].to_numpy() >= 3) & (df["has_convictions"].to_numpy() == 1)
 
-print("Note on scoring the enhanced GLM:")
-print("The enhanced_glm expects interaction columns appended to X.")
-print("Columns are named _ix_{feature_1}_{level}_X_{feature_2}_{level} (cat × cat)")
-print("or _ix_{feature_1}_{level}_{feature_2} (cat × continuous).")
-print("In production, write a scoring function that re-creates these columns before")
-print("calling enhanced_glm.predict().")
-print()
-
-# Group-level observed vs fitted comparison
-young_mask    = (driver_age_arr < 25) & (vehicle_group_arr > 35)
-ncd_conv_mask = (df["ncd_years"].to_numpy() == 0) & (df["has_convictions"].to_numpy() == 1)
-
-print("Young high-VG group (planted interaction 1):")
+print("Young high-VG group (planted interaction 1: +0.30 log-units):")
 print(f"  n_policies:             {young_mask.sum():,}")
 print(f"  Observed frequency:     {(claim_count[young_mask] / exposure[young_mask]).mean():.4f}")
 print(f"  Base GLM fitted freq:   {mu_glm[young_mask].mean():.4f}")
 print()
-print("Zero-NCD + convicted group (planted interaction 2):")
-print(f"  n_policies:             {ncd_conv_mask.sum():,}")
-print(f"  Observed frequency:     {(claim_count[ncd_conv_mask] / exposure[ncd_conv_mask]).mean():.4f}")
-print(f"  Base GLM fitted freq:   {mu_glm[ncd_conv_mask].mean():.4f}")
+print("NCD>=3 convicted group (planted interaction 2: +0.20 log-units):")
+print(f"  n_policies:             {ncd3_conv_mask.sum():,}")
+print(f"  Observed frequency:     {(claim_count[ncd3_conv_mask] / exposure[ncd3_conv_mask]).mean():.4f}")
+print(f"  Base GLM fitted freq:   {mu_glm[ncd3_conv_mask].mean():.4f}")
 print()
 print("The base GLM underestimates both groups. The enhanced GLM's interaction terms")
 print("add an upward correction for these combinations, reducing the underfit.")
@@ -706,7 +736,7 @@ except Exception as e:
 # MAGIC
 # MAGIC | Step | Output |
 # MAGIC |------|--------|
-# MAGIC | Synthetic motor portfolio | 100,000 policies; two planted interactions |
+# MAGIC | Synthetic motor portfolio | 100,000 policies; two planted interactions resampled from DGP |
 # MAGIC | Feature engineering | Banded age, vehicle group, mileage; categorical encoding |
 # MAGIC | Baseline Poisson GLM | Main effects only; deviance and AIC recorded |
 # MAGIC | CANN ensemble (3 runs) | Trained on GLM residuals; skip-connection architecture |
