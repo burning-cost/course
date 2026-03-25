@@ -50,7 +50,7 @@ import polars as pl
 import pandas as pd
 import matplotlib.pyplot as plt
 import mlflow
-from catboost import CatBoostClassifier, Pool
+from catboost import CatBoostRegressor, Pool
 from sklearn.metrics import roc_auc_score, roc_curve
 
 from insurance_monitoring import MonitoringReport
@@ -241,7 +241,7 @@ val_pool = Pool(
     baseline=np.log(e_val.values),
 )
 
-model = CatBoostClassifier(
+model = CatBoostRegressor(
     loss_function="Poisson",
     eval_metric="Poisson",
     learning_rate=0.05,

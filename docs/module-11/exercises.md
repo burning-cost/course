@@ -156,15 +156,15 @@ Run `psi()` on the same data and compare.
 psi_val = psi(
     reference=pred_ref,
     current=pred_cur,
-    exposure_ref=exposure_ref,
-    exposure_cur=exposure_cur,
+    exposure_weights=exposure_cur,
+    reference_exposure=exposure_ref,
 )
 print(f"Library PSI (exposure-weighted): {psi_val:.4f}")
 print(f"Manual PSI (unweighted):         {psi_manual:.4f}")
 print("(green if < 0.10, amber if 0.10-0.25, red if > 0.25)")
 ```
 
-**Question 2a:** Why does the library result differ from your manual result? The library accepts `exposure_ref` and `exposure_cur` arguments. Write one paragraph explaining what the exposure-weighted PSI measures and why unweighted PSI can mislead on insurance data. Give a concrete example of the type of seasonal portfolio composition that would cause unweighted PSI to flag a false positive.
+**Question 2a:** Why does the library result differ from your manual result? The library accepts `exposure_weights` (for the current period) and `reference_exposure` (for the reference period) arguments. Write one paragraph explaining what the exposure-weighted PSI measures and why unweighted PSI can mislead on insurance data. Give a concrete example of the type of seasonal portfolio composition that would cause unweighted PSI to flag a false positive.
 
 **Question 2b:** The thresholds (0.10 / 0.20) originate from credit scoring in the 1980s. Name one structural difference between a credit scoring application and a UK motor frequency model that might mean these thresholds are calibrated poorly for insurance. Should the threshold be higher or lower for motor, and why?
 
@@ -267,25 +267,23 @@ plt.show()
 ### Task 1: Run CSI on all model features
 
 ```python
-csi_results = {}
+# csi() returns a Polars DataFrame with columns: feature, csi, band
+csi_df = csi(
+    reference_df=df_reference,
+    current_df=df_current,
+    features=FEATURES,
+    n_bins=10,
+)
 
-for feature in FEATURES:
-    ref_values = df_reference[feature].to_numpy()
-    cur_values = df_current[feature].to_numpy()
-
-    result = csi_calc.calculate(
-        feature_name=feature,
-        reference=ref_values,
-        current=cur_values,
-    )
-    csi_results[feature] = result
+# Build a dict from the DataFrame for convenient per-feature access
+csi_results = {row["feature"]: row["csi"] for row in csi_df.iter_rows(named=True)}
 
 # Print ranked table — most-shifted feature first
 print(f"{'Feature':<25} {'CSI':>8}  {'Status'}")
 print("-" * 45)
-for feature, result in sorted(csi_results.items(), key=lambda x: x[1].csi, reverse=True):
-    flag = " <-- investigate" if result.csi > 0.20 else ""
-    print(f"{feature:<25} {result:>8.4f}{flag}")
+for row in csi_df.sort("csi", descending=True).iter_rows(named=True):
+    flag = " <-- investigate" if row["csi"] > 0.20 else ""
+    print(f"{row['feature']:<25} {row['csi']:>8.4f}  {row['band']}{flag}")
 ```
 
 ### Task 2: Plot distribution comparisons for flagged features
@@ -327,9 +325,9 @@ for feature in CAT_FEATURES:
 
 ```python
 # Task 2: Distribution plots for flagged features
-flagged = [f for f, r in csi_results.items() if r.csi > 0.10]
+flagged = [f for f, v in csi_results.items() if v > 0.10]
 if not flagged:
-    flagged = sorted(csi_results, key=lambda f: csi_results[f].csi, reverse=True)[:2]
+    flagged = sorted(csi_results, key=lambda f: csi_results[f], reverse=True)[:2]
 
 n = len(flagged)
 fig, axes = plt.subplots(1, n, figsize=(7 * n, 5))
@@ -339,7 +337,7 @@ if n == 1:
 for ax, feature in zip(axes, flagged):
     ref_vals = df_reference[feature].to_numpy()
     cur_vals = df_current[feature].to_numpy()
-    csi_val  = csi_results[feature].csi
+    csi_val  = csi_results[feature]
 
     ax.hist(ref_vals, bins=30, alpha=0.6, label="Reference", color="steelblue", density=True)
     ax.hist(cur_vals, bins=30, alpha=0.6, label="Current",   color="tomato",    density=True)
@@ -372,17 +370,16 @@ Further investigation is warranted even when CSI is below amber if the new categ
 
 actual_cur  = df_current["claim_count"].to_numpy().astype(float)
 
-ae_portfolio = ae_calc.calculate(
+ae_result = ae_ratio_ci(
     actual=actual_cur,
-    expected=expected_cur,
-    exposure=exposure_cur,
+    predicted=expected_cur,
+    method="poisson",
 )
 
 print(f"Portfolio A/E:    {ae_result["ae"]:.4f}")
 print(f"95% CI:           [{ae_result["lower"]:.4f}, {ae_result["upper"]:.4f}]")
 print(f"Actual claims:    {actual_cur.sum():.0f}")
 print(f"Expected claims:  {expected_cur.sum():.1f}")
-print(f"Traffic light:    {"green/amber/red"}")
 ```
 
 **Question 1:** The 95% CI formula under a Poisson assumption is approximately:
@@ -424,10 +421,12 @@ for low, high, label in age_bands:
         predicted=seg["expected"].to_numpy(),
         method="poisson",
     )
+    ae_val = result["ae"]
+    band = "green" if 0.9 <= ae_val <= 1.1 else "amber" if 0.85 <= ae_val <= 1.15 else "red"
     print(
         f"{label:<10} {result["ae"]:>8.4f}  {result["lower"]:>10.4f}  "
         f"{result["upper"]:>10.4f}  {seg['claim_count'].sum():>8.0f}  "
-        f"{seg['expected'].sum():>10.1f}  {result["band"]}"
+        f"{seg['expected'].sum():>10.1f}  {band}"
     )
 ```
 
@@ -513,7 +512,8 @@ print(f"Gini (current):    {gini_result.current_gini:.4f}")
 print(f"Change:            {gini_result.current_gini - gini_result.reference_gini:+.4f}")
 print(f"Z-statistic:       {gini_result.z_statistic:.4f}")
 print(f"P-value:           {gini_result.p_value:.4f}")
-print(f"Traffic light:     {gini_result["band"]}")
+gini_band = "red" if gini_result.p_value < 0.05 else "amber" if gini_result.p_value < 0.10 else "green"
+print(f"Traffic light:     {gini_band}")
 ```
 
 ### Task 2: Plot the ROC curves
@@ -560,11 +560,16 @@ for low, high, label in [(17, 25, "17-24"), (40, 60, "40-59")]:
         (df_current["driver_age"] >= low) & (df_current["driver_age"] < high)
     ).to_numpy()
 
-    seg_result = gini_calc.calculate(
-        y_ref   = y_ref[ref_mask],
-        pred_ref= pred_ref[ref_mask],
-        y_cur   = y_cur[cur_mask],
-        pred_cur= pred_cur[cur_mask],
+    g_ref_seg = gini_coefficient(actual_ref[ref_mask], pred_ref[ref_mask])
+    g_cur_seg = gini_coefficient(actual_cur[cur_mask], pred_cur[cur_mask])
+    seg_result = gini_drift_test(
+        reference_gini=g_ref_seg,
+        current_gini=g_cur_seg,
+        reference_actual=actual_ref[ref_mask],
+        reference_predicted=pred_ref[ref_mask],
+        current_actual=actual_cur[cur_mask],
+        current_predicted=pred_cur[cur_mask],
+        n_bootstrap=200,
     )
     print(
         f"{label}: ref={seg_result.reference_gini:.4f}, "
@@ -604,38 +609,42 @@ for low, high, label in [(17, 25, "17-24"), (40, 60, "40-59")]:
 ### Task 1: Assemble and print the report
 
 ```python
+# actual_ref and exposure_ref come from the shared setup cell
+actual_ref = df_reference["claim_count"].to_numpy().astype(float)
+
 report = MonitoringReport(
-    model_name="motor_frequency_v1",
-    reference_date="2022-12-31",
-    current_date="2023-12-31",
+    reference_actual=actual_ref,
+    reference_predicted=pred_ref,
+    current_actual=actual_cur,
+    current_predicted=pred_cur,
+    exposure=exposure_cur,
+    reference_exposure=exposure_ref,
+    feature_df_reference=df_reference,
+    feature_df_current=df_current,
+    features=FEATURES,
+    murphy_distribution="poisson",
+    gini_bootstrap=False,
 )
 
-# MonitoringReport is constructed with all inputs — no add_*() methods
-
-for feature, result in csi_results.items():
-    # (CSI is included via feature_df_reference/feature_df_current)
-
-# All metrics are passed at construction
-# MonitoringReport runs gini_drift_test() internally
-
 report_dict = report.to_dict()
-summary = report_dict  # for backward-compatible access in this exercise
+results = report_dict["results"]
 
 print("=" * 60)
 print(f"OVERALL STATUS: {report.recommendation}")
 print("=" * 60)
 print()
 
-m = summary["metrics"]
-print(f"{'Score PSI':<35} {m['psi_score']['value']:>8.4f}  {m['psi_score']['traffic_light']}")
-print(f"{'A/E ratio':<35} {m['ae_ratio']['value']:>8.4f}  {m['ae_ratio']['traffic_light']}")
-print(f"{'A/E 95% CI':<35} [{m['ae_ratio']['ci_lower']:.4f}, {m['ae_ratio']['ci_upper']:.4f}]")
-print(f"{'Gini (current)':<35} {m['gini']['gini_cur']:>8.4f}  {m['gini']['traffic_light']}")
-print(f"{'Gini p-value':<35} {m['gini']['p_value']:>8.4f}")
+ae  = results["ae_ratio"]
+gini = results["gini"]
+print(f"{'A/E ratio':<35} {ae['value']:>8.4f}  {ae['band']}")
+print(f"{'A/E 95% CI':<35} [{ae['lower_ci']:.4f}, {ae['upper_ci']:.4f}]")
+print(f"{'Gini (current)':<35} {gini['current']:>8.4f}  {gini['band']}")
+print(f"{'Gini p-value':<35} {gini['p_value']:>8.4f}")
 print()
 print("Feature CSI:")
-for csi_item in sorted(summary["csi"], key=lambda x: x["csi"], reverse=True):
-    print(f"  {csi_item['feature']:<28} {csi_item['csi']:>8.4f}  {csi_item['traffic_light']}")
+if "csi" in results:
+    for csi_item in sorted(results["csi"], key=lambda x: x["csi"], reverse=True):
+        print(f"  {csi_item['feature']:<28} {csi_item['csi']:>8.4f}  {csi_item['band']}")
 ```
 
 ### Task 2: The aggregation logic
@@ -1128,7 +1137,7 @@ Escalation:     CRO / Actuarial Function Holder
 # Answer to Question 3c
 queries = {
     "monitoring_schedule": """
-        SELECT current_date, overall_traffic_light, ae_ratio, psi_score
+        SELECT current_date, recommendation, ae_ratio, psi_score
         FROM main.motor_monitoring.monitoring_log
         WHERE model_name = 'motor_frequency_v1'
           AND YEAR(current_date) = 2023

@@ -19,11 +19,11 @@ SELECT
     run_date,
     model_name,
     ae_ratio,
-    overall_traffic_light,
+    recommendation,
     psi_score
 FROM main.motor_monitoring.monitoring_log
 WHERE
-    overall_traffic_light IN ('AMBER', 'RED')
+    recommendation IN ('RECALIBRATE', 'REFIT', 'INVESTIGATE', 'MONITOR_CLOSELY')
     AND run_date >= DATE_SUB(CURRENT_DATE(), 7)
 ORDER BY run_date DESC
 ```
@@ -49,10 +49,10 @@ SELECT
     ae_ci_upper,
     gini_cur,
     psi_score,
-    overall_traffic_light
+    recommendation
 FROM main.motor_monitoring.monitoring_log
 WHERE
-    overall_traffic_light = 'RED'
+    recommendation = 'REFIT'
     AND run_date >= DATE_SUB(CURRENT_DATE(), 3)
 ```
 
@@ -69,35 +69,46 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-def send_monitoring_alert(summary: dict, recipients: list[str]) -> None:
-    """Send an email alert when the monitoring report is AMBER or RED."""
+def send_monitoring_alert(report_dict: dict, model_name: str, current_date: str, recipients: list[str]) -> None:
+    """Send an email alert when the monitoring report requires action.
 
-    traffic_light = summary["overall_traffic_light"]
+    Parameters
+    ----------
+    report_dict : dict
+        Output of MonitoringReport.to_dict(). Keys: results, recommendation, murphy_available.
+    model_name : str
+        Model name string for the email subject.
+    current_date : str
+        Monitoring period end date (e.g. "2024-06-30").
+    recipients : list[str]
+        Email addresses to notify.
+    """
+    recommendation = report_dict["recommendation"]
 
-    if traffic_light == "GREEN":
+    if recommendation == "NO_ACTION":
         return  # No alert needed
 
-    subject = f"[{traffic_light}] Motor model monitoring - {summary['current_date']}"
+    subject = f"[{recommendation}] Motor model monitoring - {current_date}"
 
-    ae = summary["metrics"]["ae_ratio"]
-    gini = summary["metrics"]["gini"]
-    psi = summary["metrics"]["psi_score"]
+    results = report_dict["results"]
+    ae   = results["ae_ratio"]
+    gini = results["gini"]
 
     body = f"""
-Model monitoring report for {summary['model_name']}
-Period: {summary['reference_date']} to {summary['current_date']}
-Status: {traffic_light}
+Model monitoring report for {model_name}
+Period ending: {current_date}
+Recommendation: {recommendation}
 
 METRICS:
-  A/E ratio:  {ae['value']:.4f}  (95% CI: [{ae['ci_lower']:.4f}, {ae['ci_upper']:.4f}])  {ae['traffic_light']}
-  Score PSI:  {psi['value']:.4f}  {psi['traffic_light']}
-  Gini (ref): {gini['gini_ref']:.4f}
-  Gini (cur): {gini['gini_cur']:.4f}  p={gini['p_value']:.4f}  {gini['traffic_light']}
+  A/E ratio:  {ae['value']:.4f}  (95% CI: [{ae['lower_ci']:.4f}, {ae['upper_ci']:.4f}])  [{ae['band']}]
+  Gini (ref): {gini['reference']:.4f}
+  Gini (cur): {gini['current']:.4f}  p={gini['p_value']:.4f}  [{gini['band']}]
 
 TOP CSI FLAGS:
 """
-    for item in sorted(summary["csi"], key=lambda x: x["csi"], reverse=True)[:5]:
-        body += f"  {item['feature']:<25} CSI={item['csi']:.4f}  {item['traffic_light']}\n"
+    if "csi" in results:
+        for item in sorted(results["csi"], key=lambda x: x["csi"], reverse=True)[:5]:
+            body += f"  {item['feature']:<25} CSI={item['csi']:.4f}  [{item['band']}]\n"
 
     body += f"""
 This is an automated alert from the Burning Cost monitoring pipeline.
@@ -131,7 +142,7 @@ ALERT_RECIPIENTS = [
     "head.of.pricing@yourcompany.com",
 ]
 
-send_monitoring_alert(summary, ALERT_RECIPIENTS)
+send_monitoring_alert(report.to_dict(), MODEL_NAME, CURRENT_DATE, ALERT_RECIPIENTS)
 ```
 
 Store `smtp_host`, `smtp_user`, and `smtp_pass` in Databricks Secrets (under the scope `monitoring`). Never put credentials in a notebook.
@@ -144,32 +155,43 @@ If your team uses Teams or Slack, a webhook notification is often more effective
 import requests
 import json
 
-def send_teams_alert(summary: dict, webhook_url: str) -> None:
-    """Post a monitoring summary card to a Teams channel."""
+def send_teams_alert(report_dict: dict, model_name: str, current_date: str, webhook_url: str) -> None:
+    """Post a monitoring summary card to a Teams channel.
 
-    traffic_light = summary["overall_traffic_light"]
+    Parameters
+    ----------
+    report_dict : dict
+        Output of MonitoringReport.to_dict(). Keys: results, recommendation, murphy_available.
+    model_name : str
+        Model name for the card title.
+    current_date : str
+        Monitoring period end date.
+    webhook_url : str
+        Teams incoming webhook URL.
+    """
+    recommendation = report_dict["recommendation"]
 
-    if traffic_light == "GREEN":
+    if recommendation == "NO_ACTION":
         return
 
-    colour = "FF0000" if traffic_light == "RED" else "FFA500"
+    colour = "FF0000" if recommendation == "REFIT" else "FFA500"
 
-    ae = summary["metrics"]["ae_ratio"]
+    results = report_dict["results"]
+    ae = results["ae_ratio"]
 
     card = {
         "@type": "MessageCard",
         "@context": "https://schema.org/extensions",
         "themeColor": colour,
-        "summary": f"Model monitoring {traffic_light}: {summary['model_name']}",
+        "summary": f"Model monitoring {recommendation}: {model_name}",
         "sections": [{
-            "activityTitle": f"Model monitoring: {traffic_light}",
+            "activityTitle": f"Model monitoring: {recommendation}",
             "activitySubtitle": (
-                f"{summary['model_name']} - period ending {summary['current_date']}"
+                f"{model_name} - period ending {current_date}"
             ),
             "facts": [
-                {"name": "A/E ratio",  "value": f"{ae['value']:.4f} ({ae['traffic_light']})"},
-                {"name": "Score PSI",  "value": f"{summary['metrics']['psi_score']['value']:.4f}"},
-                {"name": "Gini (cur)", "value": f"{summary['metrics']['gini']['gini_cur']:.4f}"},
+                {"name": "A/E ratio",  "value": f"{ae['value']:.4f} [{ae['band']}]"},
+                {"name": "Gini (cur)", "value": f"{results['gini']['current']:.4f}  [{results['gini']['band']}]"},
             ],
         }],
     }
@@ -187,7 +209,7 @@ def send_teams_alert(summary: dict, webhook_url: str) -> None:
 
 
 teams_webhook = dbutils.secrets.get(scope="monitoring", key="teams_webhook_url")
-send_teams_alert(summary, teams_webhook)
+send_teams_alert(report.to_dict(), MODEL_NAME, CURRENT_DATE, teams_webhook)
 ```
 
 ### Choosing your alert strategy

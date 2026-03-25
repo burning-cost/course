@@ -113,7 +113,7 @@ year = "2024"
 annual_query = f"""
 SELECT
     current_date,
-    overall_traffic_light,
+    recommendation,
     ae_ratio,
     ae_ci_lower,
     ae_ci_upper,
@@ -138,22 +138,22 @@ print(f"ANNUAL MONITORING SUMMARY - {year}")
 print(f"Model: {MODEL_NAME}")
 print(f"Runs: {annual_pl.shape[0]}")
 print()
-print(f"{'Month':<12} {'Overall':<10} {'A/E':>8}  {'Gini cur':>10}  {'PSI':>8}")
+print(f"{'Month':<12} {'Recommendation':<20} {'A/E':>8}  {'Gini cur':>10}  {'PSI':>8}")
 print("-" * 55)
 
 for row in annual_pl.iter_rows(named=True):
     print(f"{str(row['current_date'])[:10]:<12} "
-          f"{row['overall_traffic_light']:<10} "
+          f"{row['recommendation']:<20} "
           f"{row['ae_ratio']:>8.4f}  "
           f"{row['gini_cur']:>10.4f}  "
           f"{row['psi_score']:>8.4f}")
 
-# Count by traffic light
-tl_counts = annual_pl.group_by("overall_traffic_light").len()
+# Count by recommendation
+rec_counts = annual_pl.group_by("recommendation").len()
 print()
-print("Traffic light distribution:")
-for row in tl_counts.iter_rows(named=True):
-    print(f"  {row['overall_traffic_light']}: {row['len']} months")
+print("Recommendation distribution:")
+for row in rec_counts.iter_rows(named=True):
+    print(f"  {row['recommendation']}: {row['len']} months")
 ```
 
 ### Breach response log
@@ -165,7 +165,7 @@ Any month that triggered an action (recalibration or retraining) needs a documen
 breach_query = f"""
 SELECT
     m.current_date             AS monitoring_date,
-    m.overall_traffic_light,
+    m.recommendation,
     m.ae_ratio,
     r.recalibration_factor,
     r.reason                   AS action_reason,
@@ -175,7 +175,7 @@ LEFT JOIN {CATALOG}.{SCHEMA}.recalibration_history r
     ON m.model_name = r.model_name
     AND m.current_date = r.effective_from
 WHERE m.model_name = '{MODEL_NAME}'
-  AND (m.overall_traffic_light IN ('AMBER', 'RED') OR r.recalibration_factor IS NOT NULL)
+  AND (m.recommendation != 'NO_ACTION' OR r.recalibration_factor IS NOT NULL)
 ORDER BY m.current_date
 """
 

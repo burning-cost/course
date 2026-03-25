@@ -56,8 +56,7 @@ import matplotlib.pyplot as plt
 import arviz as az
 
 from insurance_spatial import build_grid_adjacency, BYM2Model
-from insurance_spatial.diagnostics import moran_i, convergence_summary
-from insurance_spatial.relativities import extract_relativities
+from insurance_spatial.diagnostics import moran_i
 from insurance_spatial.plots import plot_relativities, plot_trace
 
 warnings.filterwarnings("ignore")
