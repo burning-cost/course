@@ -13,16 +13,16 @@ Connect to your cluster. If it says "Detached" at the top right, click it and se
 In the first cell, put both the install and the restart together:
 
 ```python
-%pip install insurance-interactions glum polars numpy torch mlflow insurance-datasets --quiet
+%pip install "insurance-interactions[torch]" glum polars numpy mlflow insurance-datasets --quiet
 dbutils.library.restartPython()
 ```
 
 Both commands must be in the same cell. If they are in separate cells, a learner may accidentally run the import cell before the restart completes. This clears the Python session — that is expected. Do not run any other cells until you see the restart confirmation.
 
-The `insurance-interactions` library installs:
+The `insurance-interactions[torch]` extra installs:
 - **torch** — PyTorch, used to train the CANN. PyTorch is a large package; the first install may take 3-5 minutes
 - **glum** — the GLM library for testing interactions
-- **polars** — the data manipulation library we have used throughout this course
+- **polars** — the data manipulation library used throughout this course
 - **scipy** — for the chi-squared distribution in LR tests
 
 `insurance-datasets` is the standard synthetic motor portfolio used throughout the course.
@@ -30,10 +30,10 @@ The `insurance-interactions` library installs:
 If you want SHAP interaction validation (Part 14), you also need:
 
 ```python
-%pip install "insurance-interactions[shap]" catboost shapiq --quiet
+%pip install "insurance-interactions[shap]" --quiet
 ```
 
-We will note where the SHAP validation section begins and what to do if you have not installed these.
+This adds `catboost` and `shapiq`. We will note where the SHAP validation section begins.
 
 ### Confirm the imports work
 
@@ -56,7 +56,7 @@ print("insurance-datasets: load_motor available")
 
 You should see:
 
-```bash
+```
 insurance-interactions version: 0.1.0
 insurance-datasets: load_motor available
 ```

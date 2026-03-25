@@ -49,14 +49,15 @@ Note: the comparison table uses `deviance_aic` and `deviance_bic` (deviance-base
 
 ```python
 # The enhanced_glm is a fitted glum GeneralizedLinearRegressor
+# glm.coef_ excludes the intercept; add 1 for total parameter count
 print(f"Base GLM parameters:      {len(glm_base.coef_) + 1}")
 print(f"Enhanced GLM parameters:  {len(enhanced_glm.coef_) + 1}")
 print()
 
-# Show interaction coefficients (columns starting with _ix_)
-coef_names = enhanced_glm.feature_names_in_
-ix_cols    = [c for c in coef_names if c.startswith("_ix_")]
-ix_coefs   = [enhanced_glm.coef_[list(coef_names).index(c)] for c in ix_cols]
+# glum stores feature names in feature_names_ (not feature_names_in_)
+coef_names = enhanced_glm.feature_names_
+ix_cols  = [c for c in coef_names if c.startswith("_ix_")]
+ix_coefs = [enhanced_glm.coef_[list(coef_names).index(c)] for c in ix_cols]
 
 print("Interaction term coefficients:")
 for name, coef in sorted(zip(ix_cols, ix_coefs), key=lambda x: abs(x[1]), reverse=True):
@@ -64,5 +65,7 @@ for name, coef in sorted(zip(ix_cols, ix_coefs), key=lambda x: abs(x[1]), revers
 ```
 
 **What this shows:** For a categorical × categorical interaction (e.g., `age_band × vehicle_group`), the library adds separate binary contrast columns for each non-reference level combination. A 6-level age band × 5-level vehicle group band produces 5 × 4 = 20 interaction columns, each named `_ix_age_band_{level}_X_vehicle_group_{level}`. For a categorical × continuous interaction, the columns are named `_ix_{cat_feature}_{level}_{cont_feature}`.
+
+The feature names in glum are accessible via `enhanced_glm.feature_names_` — this is glum's attribute, not the scikit-learn `feature_names_in_`. Both contain the same column names but the glum attribute is what is reliably populated after fitting.
 
 For the planted interaction (age band 17-21, vehicle group 41-50), you should see positive interaction coefficients in the region of +0.25 to +0.35, consistent with the planted 0.30 log-unit bump.

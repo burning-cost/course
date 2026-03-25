@@ -32,4 +32,10 @@ spark.createDataFrame(
 print("Enhanced GLM predictions written to pricing.motor.enhanced_glm_predictions")
 ```
 
-**Note on the enhanced model in production:** The `build_glm_with_interactions` function returns a `glum` model that was trained on `X_int` — a DataFrame with additional interaction columns appended. To score new policies with this model, you need to re-create those interaction columns in the same way. The interaction column naming convention is `_ix_{feat1}_{feat2}` for categorical × categorical pairs. In a production pipeline, you would write a scoring function that takes the original feature DataFrame and adds these columns before calling `enhanced_glm.predict()`.
+**Note on the enhanced model in production:** The `build_glm_with_interactions` function returns a `glum` model that was trained on `X_int` — a DataFrame with additional interaction columns appended. To score new policies with this model, you need to re-create those interaction columns in the same way. The column naming conventions are:
+
+- Categorical × categorical: `_ix_{feat1}_{level}_X_{feat2}_{level}` — one binary column for each non-reference (level_1, level_2) combination
+- Categorical × continuous: `_ix_{cat_feat}_{level}_{cont_feat}` — one column per non-reference categorical level
+- Continuous × continuous: `_ix_{feat1}_{feat2}` — a single product column
+
+Feature names are accessible via `enhanced_glm.feature_names_` (glum's attribute). In a production scoring function, you would iterate over `interaction_pairs`, reconstruct the appropriate columns using the same logic as the library, and pass the augmented DataFrame to `enhanced_glm.predict()`.

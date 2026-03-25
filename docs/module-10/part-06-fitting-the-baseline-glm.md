@@ -38,10 +38,14 @@ def poisson_deviance(y_true, y_pred, weights):
     return 2.0 * np.sum(weights * (log_term - (y_true - mu)))
 
 base_deviance = poisson_deviance(y, mu_glm, exposure_arr)
-base_aic = base_deviance + 2 * len(glm_base.coef_)  # glum includes intercept in coef_
+# glm_base.coef_ excludes the intercept; add 1 for parameter count
+base_n_params = len(glm_base.coef_) + 1
+base_aic = base_deviance + 2 * base_n_params
 print(f"Baseline GLM deviance: {base_deviance:,.1f}")
 print(f"Baseline GLM AIC:      {base_aic:,.1f}")
-print(f"Number of parameters:  {len(glm_base.coef_)}")
+print(f"Number of parameters:  {base_n_params}")
 ```
+
+Note: `glm_base.coef_` in glum contains one entry per feature level (after encoding categoricals), but does not include the intercept. The intercept is stored separately in `glm_base.intercept_`. Always add 1 when counting total model parameters.
 
 Keep a note of these numbers. At the end of the module we will compare the interaction-enhanced GLM against these values.

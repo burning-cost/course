@@ -1,52 +1,45 @@
 ## Part 14: SHAP interaction validation (optional)
 
-NID tells you what interactions the CANN learned from the GLM's residuals. As a second opinion, you can compute SHAP interaction values from the CatBoost model you trained in Module 3. When both methods flag the same pair, the evidence is stronger.
+NID tells you what interactions the CANN learned from the GLM's residuals. As a second opinion, you can compute SHAP interaction values from a CatBoost model. When both methods flag the same pair, the evidence is stronger.
 
-This section requires `catboost` and `shapiq`. If you did not install them, skip to Part 15.
+This section requires the `shap` extra for `insurance-interactions`. If you did not install it, skip to Part 15.
 
 ```python
-# Check if CatBoost and shapiq are available
+# Check if the shap extra dependencies are available
 try:
-    from catboost import CatBoostRegressor, Pool
+    import catboost
     import shapiq
     SHAP_AVAILABLE = True
-    print("CatBoost and shapiq available.")
+    print("catboost and shapiq available.")
 except ImportError:
     SHAP_AVAILABLE = False
-    print("CatBoost or shapiq not available. Skipping SHAP validation.")
-    print("Install with: %pip install catboost shapiq")
+    print("catboost or shapiq not available. Skipping SHAP validation.")
+    print("Install with: %pip install \"insurance-interactions[shap]\"")
 ```
 
 ### Train a CatBoost model as the SHAP oracle
 
+The `insurance-interactions` library provides `fit_catboost()` to train the GBM oracle. This handles the Polars-to-pandas conversion, categorical feature encoding, and the correct loss function.
+
 ```python
 if SHAP_AVAILABLE:
-    cat_features = ["area", "vehicle_group", "age_band", "annual_mileage"]
+    from insurance_interactions.shap_interactions import fit_catboost
 
-    X_pd_cb = X.to_pandas()
-    for col in cat_features:
-        X_pd_cb[col] = X_pd_cb[col].astype(str)
-
-    pool = Pool(
-        X_pd_cb,
-        label=y,
-        baseline=np.log(exposure_arr),  # log-exposure offset for Poisson model; do not use weight=
-        cat_features=cat_features,
-    )
-
-    cb_model = CatBoostRegressor(
+    cb_model = fit_catboost(
+        X=X,
+        y=y,
+        exposure=exposure_arr,
+        family="poisson",
         iterations=500,
         depth=6,
         learning_rate=0.05,
-        loss_function="Poisson",
-        random_seed=42,
+        seed=42,
         verbose=False,
     )
-    cb_model.fit(pool)
     print("CatBoost training complete.")
 ```
 
-This is the same CatBoost Poisson model from Module 3. If you have the Module 3 notebook still open, use that fitted model directly rather than retraining.
+`fit_catboost` infers categorical columns from the Polars dtype and uses `sample_weight=exposure` in the Pool, which is the correct treatment for Poisson frequency (CatBoost does not support a log-offset for Poisson, so exposure enters as a weight).
 
 ### Re-run the detector with SHAP validation
 
@@ -58,7 +51,7 @@ if SHAP_AVAILABLE:
         y=y,
         glm_predictions=mu_glm,
         exposure=exposure_arr,
-        shap_model=cb_model,   # Pass the CatBoost model for SHAP interaction validation
+        shap_model=cb_model,   # Pass the fitted CatBoost model
     )
 
     # The full table now includes shap_score, shap_rank, and consensus_score
@@ -75,7 +68,9 @@ if SHAP_AVAILABLE:
     )
 ```
 
-**Interpreting the consensus:** A pair that ranks first by NID and also ranks first by SHAP is very strong evidence of a genuine interaction. A pair that ranks third by NID but fifteenth by SHAP is worth scrutinising: the CANN found something the GBM did not, which could mean the interaction is an artefact of CANN training, or that the SHAP calculation is obscuring a real interaction via the independence assumption (SHAP interaction values assume features can be independently perturbed, which is violated by the structural correlation between age and NCD in UK motor).
+When `shap_model` is passed to `detector.fit()`, the library calls `compute_shap_interactions` internally and merges the scores into `interaction_table()`. If the shapiq computation fails (e.g., the model type is unsupported), a `UserWarning` is emitted and the pipeline continues with NID scores only — it does not raise.
+
+**Interpreting the consensus:** A pair that ranks first by NID and also ranks first by SHAP is very strong evidence of a genuine interaction. A pair that ranks third by NID but fifteenth by SHAP is worth scrutinising: the CANN found something the GBM did not, which could mean the interaction is a CANN training artefact, or that the SHAP calculation is obscuring a real interaction via the independence assumption.
 
 ### Why NID and SHAP can disagree
 
@@ -87,3 +82,5 @@ The two methods can disagree because:
 2. NID depends on the CANN having converged. A noisy training run can inflate scores for spurious pairs.
 
 Neither method is ground truth. The LR test is the ground truth for statistical significance. NID and SHAP are ranking tools for prioritising which pairs to test.
+
+Note: `compute_shap_interactions` subsamples to `max_rows=5000` by default before calling shapiq, since full pairwise SHAP on 100,000 rows is expensive. 5,000 rows is typically sufficient for stable rankings.

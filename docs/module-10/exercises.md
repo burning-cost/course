@@ -54,7 +54,7 @@ df_diag = pl.DataFrame({
     "vehicle_group":     X["vehicle_group"].to_list(),
     "ncd_years":         X["ncd_years"].to_list(),
     "age_band":          X["age_band"].to_list(),
-    "conviction_points": X["conviction_points"].to_list(),
+    "conviction_points": df["conviction_points"].to_list(),
     "annual_mileage":    X["annual_mileage"].to_list(),
     "y":                 y,
     "mu_glm":            mu_glm,
@@ -413,11 +413,11 @@ import numpy as np
 # If you no longer have them in scope, re-run the data generation cell
 # We use the banded versions for the GLM but need the continuous versions here
 print("ncd_years unique values:", sorted(X["ncd_years"].unique().to_list()))
-print("conviction_points unique values:", sorted(X["conviction_points"].unique().to_list()))
+print("conviction_points unique values:", sorted(df["conviction_points"].unique().to_list()))
 
 # Pearson correlation
 ncd_arr = X["ncd_years"].to_numpy().astype(float)
-cv_arr  = X["conviction_points"].to_numpy().astype(float)
+cv_arr  = df["conviction_points"].to_numpy().astype(float)
 r_ncd_cv = np.corrcoef(ncd_arr, cv_arr)[0, 1]
 print(f"\nPearson r(ncd_years, conviction_points): {r_ncd_cv:.4f}")
 ```
@@ -462,7 +462,7 @@ import polars as pl
 
 # Task 1: Correlations
 ncd_arr = X["ncd_years"].to_numpy().astype(float)
-cv_arr  = X["conviction_points"].to_numpy().astype(float)
+cv_arr  = df["conviction_points"].to_numpy().astype(float)
 r_ncd_cv = np.corrcoef(ncd_arr, cv_arr)[0, 1]
 print(f"Pearson r(ncd_years, conviction_points): {r_ncd_cv:.4f}")
 
@@ -581,13 +581,24 @@ mu_manual = glm_manual.predict(X_pd)
 # Handle y == 0 carefully
 ```
 
-**Task 2.** Now add a categorical-by-categorical interaction for `age_band × vehicle_group`. Create the combined categorical column by concatenating the string values of both features:
+**Task 2.** Now add a categorical-by-categorical interaction for `age_band × vehicle_group`. The library uses R-style binary contrast columns: for each non-reference level of age_band and each non-reference level of vehicle_group, one binary indicator column is added. This gives (L_age - 1) × (L_vg - 1) new columns — the correct degrees of freedom for the LR test.
+
+The reference level for each feature is the first level in sorted order.
 
 ```python
+# Get sorted categories for each feature
+age_cats = sorted(X_pd["age_band"].cat.categories.tolist())
+vg_cats  = sorted(X_pd["vehicle_group"].cat.categories.tolist())
+non_ref_age = age_cats[1:]   # drop reference level
+non_ref_vg  = vg_cats[1:]    # drop reference level
+
 X_int = X_pd.copy()
-X_int["_ix_age_band_vehicle_group"] = pd.Categorical(
-    X_pd["age_band"].astype(str) + "_X_" + X_pd["vehicle_group"].astype(str)
-)
+for v_age in non_ref_age:
+    ind_age = (X_pd["age_band"] == v_age).astype(float)
+    for v_vg in non_ref_vg:
+        ind_vg = (X_pd["vehicle_group"] == v_vg).astype(float)
+        col = f"_ix_age_band_{v_age}_X_vehicle_group_{v_vg}"
+        X_int[col] = ind_age * ind_vg
 ```
 
 Fit a second GLM on `X_int` and compute `dev_interaction`.
@@ -602,7 +613,7 @@ p    = 1 - chi2_cdf(chi2, df=df)
 
 How many levels does `age_band` have? How many does `vehicle_group` (banded) have? What is `n_cells`?
 
-**Task 4.** Call `detector_careful.glm_test_table()` and find the row for `age_band × vehicle_group`. Compare your manual `chi2`, `df`, and `p` to the library's values. They should match to within floating-point rounding.
+**Task 4.** Call `detector_careful.glm_test_table()` and find the row for `age_band × vehicle_group`. Compare your manual `chi2`, `df`, and `p` to the library's values. They should match closely. (Minor differences arise if you refitted the base GLM from scratch rather than using the same model object the library used internally — the base deviance will be the same to within floating-point precision, but the absolute chi2 values may differ by a tiny rounding amount.)
 
 **Task 5.** Now compute `delta_aic` and `delta_bic` for this interaction:
 
@@ -652,11 +663,19 @@ n_params_base = len(glm_manual.coef_) + 1
 print(f"Task 1: Baseline deviance: {dev_base:,.2f}")
 print(f"        Parameters:        {n_params_base}")
 
-# Task 2: Add age_band x vehicle_group interaction
+# Task 2: Add age_band x vehicle_group interaction using binary contrasts
+# (L_age - 1) * (L_vg - 1) new columns, matching the library's encoding
+age_cats    = sorted(X_pd["age_band"].cat.categories.tolist())
+vg_cats     = sorted(X_pd["vehicle_group"].cat.categories.tolist())
+non_ref_age = age_cats[1:]
+non_ref_vg  = vg_cats[1:]
+
 X_int = X_pd.copy()
-X_int["_ix_age_band_vehicle_group"] = pd.Categorical(
-    X_pd["age_band"].astype(str) + "_X_" + X_pd["vehicle_group"].astype(str)
-)
+for v_age in non_ref_age:
+    ind_age = (X_pd["age_band"] == v_age).astype(float)
+    for v_vg in non_ref_vg:
+        ind_vg = (X_pd["vehicle_group"] == v_vg).astype(float)
+        X_int[f"_ix_age_band_{v_age}_X_vehicle_group_{v_vg}"] = ind_age * ind_vg
 
 glm_int = GeneralizedLinearRegressor(family="poisson", alpha=0.0, fit_intercept=True)
 glm_int.fit(X_int, y, sample_weight=exposure_arr)
@@ -762,10 +781,11 @@ overlap_fraction = 1 - (joint_delta_deviance / sum_of_individual_delta_deviances
 
 What does an overlap fraction of 0.30 mean in plain language?
 
-**Task 3.** Inspect the interaction coefficients in the enhanced GLM. The library creates interaction columns named `_ix_{feat1}_{feat2}`. List all such columns and their coefficients:
+**Task 3.** Inspect the interaction coefficients in the enhanced GLM. The library creates binary contrast columns named `_ix_{feat1}_{level}_X_{feat2}_{level}` for categorical × categorical interactions. List all such columns and their coefficients:
 
 ```python
-coef_names = list(enhanced_glm.feature_names_in_)
+# glum stores feature names in feature_names_ (not feature_names_in_)
+coef_names = list(enhanced_glm.feature_names_)
 ix_cols    = [c for c in coef_names if c.startswith("_ix_")]
 ix_coefs   = [enhanced_glm.coef_[coef_names.index(c)] for c in ix_cols]
 
@@ -774,25 +794,18 @@ for name, coef in sorted(zip(ix_cols, ix_coefs), key=lambda x: abs(x[1]), revers
     print(f"{name:<55} {coef:+.4f}  {np.exp(coef):>10.3f}")
 ```
 
-**Task 4.** The planted interaction for `age_band × vehicle_group` was a log-additive 0.30 penalty for policies where `age_band ∈ {17-21, 22-25}` AND `vehicle_group ∈ {41-50}`. In the GLM, this interaction is represented as coefficients on the combined categorical `_ix_age_band_vehicle_group`. Find the coefficients for the cells corresponding to (17-21, 41-50) and (22-25, 41-50). Are they close to +0.30? Why might they differ?
+**Task 4.** The planted interaction for `age_band × vehicle_group` was a log-additive 0.30 penalty for policies where `age_band ∈ {17-21, 22-25}` AND `vehicle_group ∈ {41-50}`. In the enhanced GLM, this interaction is represented as binary contrast columns: look for `_ix_age_band_17-21_X_vehicle_group_41-50` and `_ix_age_band_22-25_X_vehicle_group_41-50`. Find those coefficients and check whether they are close to +0.30. Why might they differ?
 
-**Task 5.** The second planted interaction (`ncd_years == 0` AND `conviction_points > 0`) was a log-additive 0.20 penalty. The library encodes this as a `_ix_ncd_years_conviction_points` column. Look at the coefficients for cells with `ncd_years=0` and `conviction_points ∈ {3, 6, 9}`. Are they close to +0.20? Do they vary across conviction_points levels (i.e., does the GLM give a different coefficient for 3 points vs 9 points)?
+**Task 5.** The second planted interaction (`ncd_years == 0` AND `conviction_points > 0`) was a log-additive 0.20 penalty. `ncd_years` is a continuous integer feature and `has_convictions` is a binary feature in `X`, so the library encodes this interaction as `(L - 1)` columns (one per non-reference level of the categorical, multiplied by the continuous variable). Look for columns starting with `_ix_has_convictions_` or `_ix_ncd_years_` in the enhanced GLM. Are the coefficients close to +0.20?
 
-The planted interaction was a flat 0.20 regardless of the number of conviction points. Does the GLM recover this flatness, or does it over-fit to the specific levels?
+Note: the exact column naming depends on which features the detector identified as interacting. If `ncd_years × has_convictions` was suggested, the library creates `_ix_has_convictions_1_ncd_years` (one column, since `has_convictions` has 2 levels: 0 and 1, and level 0 is the reference).
 
 <details>
 <summary>Hint for Task 4</summary>
 
-The combined categorical interaction column contains strings of the form `"17-21_X_41-50"`. To find the coefficient for a specific cell, match the column name:
+The library creates binary contrast columns named `_ix_age_band_{age_level}_X_vehicle_group_{vg_level}` for each non-reference (age_level, vg_level) combination. These are plain numeric columns (0.0 or 1.0), not categoricals.
 
-```python
-target = "_ix_age_band_vehicle_group"
-# Find the level "17-21_X_41-50" in the GLM's design matrix
-# The GLM encodes categoricals with one level as baseline
-# Look at coef_names for entries like "_ix_age_band_vehicle_group[17-21_X_41-50]"
-```
-
-glum encodes categorical levels using bracket notation: `feature_name[level_value]`.
+To find the coefficient for the (17-21, 41-50) cell in the enhanced GLM, look for a column named exactly `_ix_age_band_17-21_X_vehicle_group_41-50` in `enhanced_glm.feature_names_`.
 
 </details>
 
@@ -845,8 +858,9 @@ print(f"  Overlap fraction:           {overlap_fraction:.3f}")
 print(f"  ({overlap_fraction*100:.1f}% of individual gains are shared across the approved interactions)")
 
 # Task 3: Interaction coefficients
-coef_names = list(enhanced_glm.feature_names_in_)
-ix_cols  = [c for c in coef_names if "_ix_" in c]
+# glum stores feature names in feature_names_ (not feature_names_in_)
+coef_names = list(enhanced_glm.feature_names_)
+ix_cols  = [c for c in coef_names if c.startswith("_ix_")]
 ix_coefs = [enhanced_glm.coef_[coef_names.index(c)] for c in ix_cols]
 
 print(f"\nTask 3: All {len(ix_cols)} interaction coefficients")
@@ -855,33 +869,33 @@ for name, coef in sorted(zip(ix_cols, ix_coefs), key=lambda x: abs(x[1]), revers
     print(f"{name:<60} {coef:+.4f}  {np.exp(coef):>10.3f}")
 
 # Task 4: Recover the planted age x vg interaction
+# Binary contrast columns: _ix_age_band_{age_level}_X_vehicle_group_{vg_level}
 print("\nTask 4: Planted interaction recovery (age_band x vehicle_group)")
 print("  Planted: +0.30 log-units for (17-21 or 22-25) x (41-50)")
 print("  Expected relativity: exp(0.30) = 1.350")
 print()
-target_cells = ["17-21_X_41-50", "22-25_X_41-50"]
-for cell in target_cells:
-    col = f"_ix_age_band_vehicle_group[{cell}]"
-    if col in coef_names:
-        coef = enhanced_glm.coef_[coef_names.index(col)]
-        print(f"  {cell}: coef = {coef:+.4f}  (relativity = {np.exp(coef):.3f})")
+target_patterns = ["_ix_age_band_17-21_X_vehicle_group_41-50",
+                   "_ix_age_band_22-25_X_vehicle_group_41-50"]
+for pattern in target_patterns:
+    if pattern in coef_names:
+        coef = enhanced_glm.coef_[coef_names.index(pattern)]
+        print(f"  {pattern}: coef = {coef:+.4f}  (relativity = {np.exp(coef):.3f})")
     else:
-        # Try alternative naming
-        matching = [c for c in ix_cols if cell in c]
+        # Search for partial match (in case interaction was in opposite order)
+        matching = [c for c in ix_cols if "17-21" in c and "41-50" in c or "22-25" in c and "41-50" in c]
         for c in matching:
             coef = enhanced_glm.coef_[coef_names.index(c)]
             print(f"  {c}: coef = {coef:+.4f}  (relativity = {np.exp(coef):.3f})")
 
 # Task 5: Recover the planted ncd x conviction interaction
-print("\nTask 5: Planted interaction recovery (ncd_years x conviction_points)")
-print("  Planted: +0.20 log-units for ncd_years=0, conviction_points in {3,6,9}")
+# For cat x continuous: column is _ix_{cat}_{level}_{cont} where level is the non-reference level
+print("\nTask 5: Planted interaction recovery (ncd_years / has_convictions)")
+print("  Planted: +0.20 log-units when ncd_years=0 and has_convictions=1")
 print("  Expected relativity: exp(0.20) = 1.221")
 ncd_ix_cols = [(c, enhanced_glm.coef_[coef_names.index(c)])
-               for c in ix_cols if "ncd" in c and "conviction" in c]
+               for c in ix_cols if "ncd" in c or "conviction" in c]
 for name, coef in sorted(ncd_ix_cols, key=lambda x: x[0]):
-    if "0_X" in name or "_X_0" in name or "ncd_0" in name or "0_" in name:
-        if any(str(cv) in name for cv in [3, 6, 9]):
-            print(f"  {name}: coef = {coef:+.4f}  (relativity = {np.exp(coef):.3f})")
+    print(f"  {name}: coef = {coef:+.4f}  (relativity = {np.exp(coef):.3f})")
 ```
 
 **What you should see:**
@@ -963,7 +977,7 @@ Compare this to the in-sample improvement from Exercise 5. Is the out-of-sample 
 
 When scoring the test set, you must construct the interaction categorical column with the same levels that appeared in training. If a (age_band, vehicle_group) combination appears in the test set but not in training, the GLM will assign a coefficient of 0 for that level (because it has no estimate). This is correct behaviour: unknown level = baseline.
 
-Be careful: `pd.Categorical` on the test set interaction column will only have the levels seen in the test set. The GLM may expect the training-set categorical levels. If you get a `ValueError` from glum about unseen levels, convert the interaction column to a string rather than `pd.Categorical`.
+The binary contrast columns are plain numeric (0.0 or 1.0), not categorical, so there is no issue with unseen levels. For a test-set policy in a (age, vehicle_group) combination not seen in training, all contrast columns for that combination will be 0 — meaning it gets the baseline interaction effect, which is the correct handling.
 
 </details>
 
@@ -1023,12 +1037,38 @@ X_test_pd = X_test.to_pandas()
 for col in ["area", "vehicle_group", "age_band", "annual_mileage"]:
     X_test_pd[col] = pd.Categorical(X_test_pd[col].astype(str))
 
+# Reconstruct the same binary contrast columns that build_glm_with_interactions created.
+# Column naming: _ix_{feat1}_{level}_X_{feat2}_{level} for cat x cat,
+#                _ix_{cat_feat}_{level}_{cont_feat}     for cat x continuous.
+# We need the same training-set category lists to identify the non-reference levels.
+X_train_pd_ref = X_train.to_pandas()
+for col in ["area", "vehicle_group", "age_band", "annual_mileage"]:
+    X_train_pd_ref[col] = pd.Categorical(X_train_pd_ref[col].astype(str))
+
 X_test_int = X_test_pd.copy()
 for f1, f2 in suggested_train:
-    # Use string (not Categorical) to handle unseen levels gracefully
-    X_test_int[f"_ix_{f1}_{f2}"] = (
-        X_test_pd[f1].astype(str) + "_X_" + X_test_pd[f2].astype(str)
-    )
+    is_cat_f1 = X_test_pd[f1].dtype.name == "category"
+    is_cat_f2 = X_test_pd[f2].dtype.name == "category"
+    if is_cat_f1 and is_cat_f2:
+        cats1 = sorted(X_train_pd_ref[f1].cat.categories.tolist())
+        cats2 = sorted(X_train_pd_ref[f2].cat.categories.tolist())
+        for v1 in cats1[1:]:
+            ind1 = (X_test_pd[f1] == v1).astype(float)
+            for v2 in cats2[1:]:
+                ind2 = (X_test_pd[f2] == v2).astype(float)
+                X_test_int[f"_ix_{f1}_{v1}_X_{f2}_{v2}"] = ind1 * ind2
+    elif is_cat_f1:
+        cats1 = sorted(X_train_pd_ref[f1].cat.categories.tolist())
+        for v1 in cats1[1:]:
+            ind1 = (X_test_pd[f1] == v1).astype(float)
+            X_test_int[f"_ix_{f1}_{v1}_{f2}"] = ind1 * X_test_pd[f2]
+    elif is_cat_f2:
+        cats2 = sorted(X_train_pd_ref[f2].cat.categories.tolist())
+        for v2 in cats2[1:]:
+            ind2 = (X_test_pd[f2] == v2).astype(float)
+            X_test_int[f"_ix_{f1}_{f2}_{v2}"] = X_test_pd[f1] * ind2
+    else:
+        X_test_int[f"_ix_{f1}_{f2}"] = X_test_pd[f1] * X_test_pd[f2]
 
 mu_base_test     = np.clip(glm_train.predict(X_test_pd), 1e-8, None)
 mu_enhanced_test = np.clip(enhanced_glm_train.predict(X_test_int), 1e-8, None)
@@ -1043,20 +1083,33 @@ dev_base_test     = poisson_deviance(y_test, mu_base_test,     exp_test)
 dev_enhanced_test = poisson_deviance(y_test, mu_enhanced_test, exp_test)
 oos_improvement   = (dev_base_test - dev_enhanced_test) / dev_base_test * 100
 
-# In-sample
+# In-sample: reuse X_test_int logic but for training data
+X_train_int = X_train_pd_ref.copy()
+for f1, f2 in suggested_train:
+    is_cat_f1 = X_train_pd_ref[f1].dtype.name == "category"
+    is_cat_f2 = X_train_pd_ref[f2].dtype.name == "category"
+    if is_cat_f1 and is_cat_f2:
+        cats1 = sorted(X_train_pd_ref[f1].cat.categories.tolist())
+        cats2 = sorted(X_train_pd_ref[f2].cat.categories.tolist())
+        for v1 in cats1[1:]:
+            ind1 = (X_train_pd_ref[f1] == v1).astype(float)
+            for v2 in cats2[1:]:
+                ind2 = (X_train_pd_ref[f2] == v2).astype(float)
+                X_train_int[f"_ix_{f1}_{v1}_X_{f2}_{v2}"] = ind1 * ind2
+    elif is_cat_f1:
+        cats1 = sorted(X_train_pd_ref[f1].cat.categories.tolist())
+        for v1 in cats1[1:]:
+            X_train_int[f"_ix_{f1}_{v1}_{f2}"] = (X_train_pd_ref[f1] == v1).astype(float) * X_train_pd_ref[f2]
+    elif is_cat_f2:
+        cats2 = sorted(X_train_pd_ref[f2].cat.categories.tolist())
+        for v2 in cats2[1:]:
+            X_train_int[f"_ix_{f1}_{f2}_{v2}"] = X_train_pd_ref[f1] * (X_train_pd_ref[f2] == v2).astype(float)
+    else:
+        X_train_int[f"_ix_{f1}_{f2}"] = X_train_pd_ref[f1] * X_train_pd_ref[f2]
+
 dev_base_train     = poisson_deviance(y_train, mu_glm_train, exp_train)
-mu_enhanced_train  = np.clip(enhanced_glm_train.predict(
-    pd.concat([X_train_pd] + [
-        pd.DataFrame({f"_ix_{f1}_{f2}": (X_train_pd[f1].astype(str) + "_X_" + X_train_pd[f2].astype(str))
-                      for f1, f2 in suggested_train})
-    ], axis=1)
-), 1e-8, None)
-dev_enhanced_train = poisson_deviance(y_train, enhanced_glm_train.predict(
-    pd.DataFrame(X_train_pd).assign(**{
-        f"_ix_{f1}_{f2}": X_train_pd[f1].astype(str) + "_X_" + X_train_pd[f2].astype(str)
-        for f1, f2 in suggested_train
-    })
-), exp_train)
+mu_enhanced_train  = np.clip(enhanced_glm_train.predict(X_train_int), 1e-8, None)
+dev_enhanced_train = poisson_deviance(y_train, mu_enhanced_train, exp_train)
 is_improvement = (dev_base_train - dev_enhanced_train) / dev_base_train * 100
 
 print(f"\nTask 4: Deviance improvement")
@@ -1703,7 +1756,7 @@ enh_lib, sug_lib, comp_lib, tbl_lib = run_interaction_pipeline(
 print("\nTask 3: Conservative vs liberal comparison")
 for label, comp in [("Conservative", comp_con), ("Liberal", comp_lib)]:
     row = comp.filter(pl.col("model") == "glm_with_interactions")
-    print(f"  {label}: AIC={row['aic'][0]:,.1f}, BIC={row['bic'][0]:,.1f}, "
+    print(f"  {label}: AIC={row['deviance_aic'][0]:,.1f}, BIC={row['deviance_bic'][0]:,.1f}, "
           f"n_params={row['n_params'][0]}")
 
 # Task 4: Write to Delta
@@ -1730,11 +1783,26 @@ def score_new_policies(
             new_X_pd[col] = pd.Categorical(new_X_pd[col].astype(str))
 
     for f1, f2 in interaction_pairs:
-        col_name = f"_ix_{f1}_{f2}"
-        # String (not Categorical) -- glum treats unseen string levels as baseline
-        new_X_pd[col_name] = (
-            new_X_pd[f1].astype(str) + "_X_" + new_X_pd[f2].astype(str)
-        )
+        is_cat_f1 = new_X_pd[f1].dtype.name == "category"
+        is_cat_f2 = new_X_pd[f2].dtype.name == "category"
+        if is_cat_f1 and is_cat_f2:
+            cats1 = sorted(new_X_pd[f1].cat.categories.tolist())
+            cats2 = sorted(new_X_pd[f2].cat.categories.tolist())
+            for v1 in cats1[1:]:
+                ind1 = (new_X_pd[f1] == v1).astype(float)
+                for v2 in cats2[1:]:
+                    ind2 = (new_X_pd[f2] == v2).astype(float)
+                    new_X_pd[f"_ix_{f1}_{v1}_X_{f2}_{v2}"] = ind1 * ind2
+        elif is_cat_f1:
+            cats1 = sorted(new_X_pd[f1].cat.categories.tolist())
+            for v1 in cats1[1:]:
+                new_X_pd[f"_ix_{f1}_{v1}_{f2}"] = (new_X_pd[f1] == v1).astype(float) * new_X_pd[f2]
+        elif is_cat_f2:
+            cats2 = sorted(new_X_pd[f2].cat.categories.tolist())
+            for v2 in cats2[1:]:
+                new_X_pd[f"_ix_{f1}_{f2}_{v2}"] = new_X_pd[f1] * (new_X_pd[f2] == v2).astype(float)
+        else:
+            new_X_pd[f"_ix_{f1}_{f2}"] = new_X_pd[f1] * new_X_pd[f2]
 
     return np.clip(enhanced_glm.predict(new_X_pd), 1e-8, None)
 
@@ -2018,10 +2086,26 @@ def score_policies(
             X_pd[col] = pd.Categorical(X_pd[col].astype(str))
 
     for f1, f2 in interaction_pairs:
-        col_name = f"_ix_{f1}_{f2}"
-        X_pd[col_name] = (
-            X_pd[f1].astype(str) + "_X_" + X_pd[f2].astype(str)
-        )
+        is_cat_f1 = X_pd[f1].dtype.name == "category"
+        is_cat_f2 = X_pd[f2].dtype.name == "category"
+        if is_cat_f1 and is_cat_f2:
+            cats1 = sorted(X_pd[f1].cat.categories.tolist())
+            cats2 = sorted(X_pd[f2].cat.categories.tolist())
+            for v1 in cats1[1:]:
+                ind1 = (X_pd[f1] == v1).astype(float)
+                for v2 in cats2[1:]:
+                    ind2 = (X_pd[f2] == v2).astype(float)
+                    X_pd[f"_ix_{f1}_{v1}_X_{f2}_{v2}"] = ind1 * ind2
+        elif is_cat_f1:
+            cats1 = sorted(X_pd[f1].cat.categories.tolist())
+            for v1 in cats1[1:]:
+                X_pd[f"_ix_{f1}_{v1}_{f2}"] = (X_pd[f1] == v1).astype(float) * X_pd[f2]
+        elif is_cat_f2:
+            cats2 = sorted(X_pd[f2].cat.categories.tolist())
+            for v2 in cats2[1:]:
+                X_pd[f"_ix_{f1}_{f2}_{v2}"] = X_pd[f1] * (X_pd[f2] == v2).astype(float)
+        else:
+            X_pd[f"_ix_{f1}_{f2}"] = X_pd[f1] * X_pd[f2]
 
     mu = np.clip(enhanced_glm.predict(X_pd), 1e-8, None)
 

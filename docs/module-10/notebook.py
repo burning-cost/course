@@ -38,11 +38,9 @@
 
 # COMMAND ----------
 
-%pip install insurance-interactions glum polars numpy torch mlflow insurance-datasets --quiet
+# insurance-interactions[torch] installs PyTorch, glum, polars, scipy.
 # Both commands in the same cell: restart follows the install.
-
-# COMMAND ----------
-
+%pip install "insurance-interactions[torch]" glum polars numpy mlflow insurance-datasets --quiet
 dbutils.library.restartPython()
 
 # COMMAND ----------
@@ -86,7 +84,7 @@ print("All imports: OK")
 # MAGIC **Interaction 2:** `ncd_years == 0` AND `conviction_points > 0`
 # MAGIC Zero NCD combined with convictions adds risk beyond what the main effects predict.
 # MAGIC
-# MAGIC The detector should rank `age_band × vehicle_group` and `ncd_years × conviction_points`
+# MAGIC The detector should rank `age_band × vehicle_group` and `ncd_years × has_convictions`
 # MAGIC in the top 5 NID candidates. If neither appears, the CANN has not converged
 # MAGIC (try increasing `cann_n_epochs` or reducing learning rate).
 
@@ -204,6 +202,9 @@ print(X["area"].value_counts().sort("area"))
 # MAGIC cannot explain. Its job is not to improve overall accuracy but to expose the
 # MAGIC interaction structure hidden in the residuals.
 # MAGIC
+# MAGIC Note: glm.coef_ in glum excludes the intercept (stored separately in glm.intercept_).
+# MAGIC Always add 1 when counting total model parameters.
+# MAGIC
 # MAGIC Check: sum of fitted values should equal sum of observed claims.
 # MAGIC This is the Poisson GLM constraint. Deviation > 0.1% means convergence failed.
 
@@ -237,8 +238,9 @@ print(f"Discrepancy: {abs(mu_glm.sum() - y.sum()) / y.sum():.4%}")
 # COMMAND ----------
 
 base_deviance = poisson_deviance(y, mu_glm, exposure_arr)
-base_aic      = base_deviance + 2 * len(glm_base.coef_)
-base_n_params = len(glm_base.coef_) + 1  # including intercept
+# glm_base.coef_ excludes the intercept; add 1 for the total parameter count
+base_n_params = len(glm_base.coef_) + 1
+base_aic      = base_deviance + 2 * base_n_params
 
 print(f"Baseline GLM deviance: {base_deviance:,.1f}")
 print(f"Baseline GLM AIC:      {base_aic:,.1f}")
@@ -300,6 +302,7 @@ print("Training complete.")
 # COMMAND ----------
 
 # Inspect validation deviance curves for all three ensemble runs
+# detector.cann is the fitted CANN object; .val_deviance_history is a list of lists
 val_histories = detector.cann.val_deviance_history
 
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
@@ -341,10 +344,12 @@ print("is on the response scale (positive values summing to y.sum()), not log sc
 # MAGIC
 # MAGIC Both planted interactions should appear in the top 5:
 # MAGIC - `age_band × vehicle_group` (supermultiplicative risk for young drivers in high groups)
-# MAGIC - `ncd_years × has_convictions` or `ncd_years × conviction_points`
+# MAGIC - `ncd_years × has_convictions` (zero NCD plus conviction adds extra risk)
 
 # COMMAND ----------
 
+# detector.nid_table() returns a Polars DataFrame with columns:
+# feature_1, feature_2, nid_score, nid_score_normalised
 nid_table = detector.nid_table()
 print("Top 10 NID candidates:")
 print(nid_table.head(10))
@@ -389,6 +394,8 @@ plt.show()
 
 # COMMAND ----------
 
+# detector.interaction_table() returns the full ranked table combining
+# NID scores and GLM LR-test results for the top_k_nid candidates
 table = detector.interaction_table()
 print("Full interaction table (top-15 NID candidates, LR-tested):")
 print(
@@ -446,6 +453,8 @@ if not age_vg_found or not ncd_conv_found:
 
 # COMMAND ----------
 
+# Returns list of (feature_1, feature_2) tuples where recommended == True,
+# sorted by consensus_score ascending (lower = better rank)
 suggested = detector.suggest_interactions(top_k=5)
 print("Recommended interaction pairs (significant after Bonferroni correction):")
 for pair in suggested:
@@ -495,7 +504,8 @@ print(comparison)
 # COMMAND ----------
 
 # Show interaction term coefficients
-coef_names = enhanced_glm.feature_names_in_
+# glum stores feature names in feature_names_ (not feature_names_in_)
+coef_names = enhanced_glm.feature_names_
 ix_cols    = [c for c in coef_names if c.startswith("_ix_")]
 ix_coefs   = [enhanced_glm.coef_[list(coef_names).index(c)] for c in ix_cols]
 
@@ -508,21 +518,22 @@ for name, coef in sorted(zip(ix_cols, ix_coefs), key=lambda x: abs(x[1]), revers
 
 # COMMAND ----------
 
-# Quantify the improvement
-int_deviance = float(comparison.filter(pl.col("model") == "glm_with_interactions")["deviance"][0])
-int_aic      = float(comparison.filter(pl.col("model") == "glm_with_interactions")["deviance_aic"][0])
-int_n_params = int(comparison.filter(pl.col("model") == "glm_with_interactions")["n_params"][0])
-
-delta_deviance     = int_deviance - base_deviance
-delta_deviance_pct = 100 * delta_deviance / base_deviance
+# Quantify the improvement using the comparison table
+# delta_deviance in the comparison table is base - enhanced (positive = improvement)
+int_row        = comparison.filter(pl.col("model") == "glm_with_interactions")
+int_deviance   = float(int_row["deviance"][0])
+int_aic        = float(int_row["deviance_aic"][0])
+int_n_params   = int(int_row["n_params"][0])
+delta_deviance     = float(int_row["delta_deviance"][0])      # positive = improvement
+delta_deviance_pct = float(int_row["delta_deviance_pct"][0])
 
 print(f"Baseline deviance:  {base_deviance:,.1f}  (AIC: {base_aic:,.1f})")
 print(f"Enhanced deviance:  {int_deviance:,.1f}  (AIC: {int_aic:,.1f})")
-print(f"Delta deviance:     {delta_deviance:+,.1f}  ({delta_deviance_pct:+.2f}%)")
+print(f"Delta deviance:     +{delta_deviance:,.1f}  (+{delta_deviance_pct:.2f}%)")
 print(f"Parameters added:   {int_n_params - base_n_params}")
 print()
-print("Negative delta = improved fit. Both AIC and BIC should be lower for the")
-print("enhanced model, confirming that the improvement justifies the parameter cost.")
+print("Both AIC and BIC should be lower for the enhanced model, confirming the")
+print("improvement justifies the parameter cost.")
 
 # COMMAND ----------
 
@@ -536,20 +547,20 @@ print("enhanced model, confirming that the improvement justifies the parameter c
 # COMMAND ----------
 
 # To score with the enhanced GLM we need to reconstruct the interaction columns.
-# build_glm_with_interactions adds columns named _ix_{feat1}_{feat2} to a copy of X.
-# For illustration we compare the two groups using the comparison table deviances;
+# build_glm_with_interactions adds columns named _ix_{feat1}_{level}_X_{feat2}_{level}
+# for cat x cat, or _ix_{feat1}_{level}_{feat2} for cat x continuous.
+# For illustration we compare the two groups using the comparison table;
 # in production, reconstruct X_int using the same logic build_glm_with_interactions uses.
-
-mu_enhanced_approx = glm_base.predict(X_pd)  # placeholder: see note below
 
 print("Note on scoring the enhanced GLM:")
 print("The enhanced_glm expects interaction columns appended to X.")
-print("The naming convention is _ix_{feature_1}_{feature_2}.")
+print("Columns are named _ix_{feature_1}_{level}_X_{feature_2}_{level} (cat × cat)")
+print("or _ix_{feature_1}_{level}_{feature_2} (cat × continuous).")
 print("In production, write a scoring function that re-creates these columns before")
-print("calling enhanced_glm.predict(). See the tutorial Part 13 for the exact pattern.")
+print("calling enhanced_glm.predict().")
 print()
 
-# Demonstrate with the group-level observed vs fitted comparison
+# Group-level observed vs fitted comparison
 young_mask    = (driver_age_arr < 25) & (vehicle_group_arr > 35)
 ncd_conv_mask = (df["ncd_years"].to_numpy() == 0) & (df["has_convictions"].to_numpy() == 1)
 
@@ -726,7 +737,7 @@ print()
 print(f"Policies:                {len(df):,}")
 print(f"Baseline deviance:       {base_deviance:,.1f}")
 print(f"Enhanced deviance:       {int_deviance:,.1f}")
-print(f"Delta deviance:          {delta_deviance:+,.1f}  ({delta_deviance_pct:+.2f}%)")
+print(f"Delta deviance:          +{delta_deviance:,.1f}  (+{delta_deviance_pct:.2f}%)")
 print(f"Parameters added:        {int_n_params - base_n_params}")
 print(f"Interactions tested:     {table.height}")
 print(f"Interactions recommended:{n_recommended}")
