@@ -22,7 +22,7 @@ These are the thresholds we recommend. They are not universally correct - your p
 |-----------|--------|
 | A/E ratio 95% CI excludes 1.0 for two consecutive months | Recalibrate |
 | A/E point estimate outside [0.90, 1.10] in any single month | Recalibrate |
-| Score PSI > 0.20 and A/E CI excludes 1.0 | Recalibrate |
+| Score PSI > 0.25 and A/E point estimate outside [0.95, 1.05] | Recalibrate |
 
 **Retraining trigger:**
 
@@ -48,7 +48,7 @@ def compute_recalibration_factor(
     actual: np.ndarray,
     expected: np.ndarray,
     exposure: np.ndarray,
-) -> float:
+) -> tuple:
     """
     Compute the recalibration factor as the inverse of the A/E ratio.
 
@@ -56,13 +56,13 @@ def compute_recalibration_factor(
     """
     ae_result = ae_ratio_ci(actual=actual, predicted=expected, method="poisson")
     factor = 1.0 / ae_result["ae"]
-    print(f"A/E ratio:           {ae_result["ae"]:.4f}")
+    print(f"A/E ratio:           {ae_result['ae']:.4f}")
     print(f"Recalibration factor: {factor:.4f}")
     print(f"Interpretation: multiply all predictions by {factor:.4f}")
-    return factor
+    return factor, ae_result
 
 
-recal_factor = compute_recalibration_factor(
+recal_factor, ae_result = compute_recalibration_factor(
     actual=actual_cur,
     expected=expected_cur,
     exposure=exposure_cur,

@@ -11,28 +11,28 @@ from insurance_spatial import build_grid_adjacency
 
 adj = build_grid_adjacency(NROWS, NCOLS, connectivity="queen")
 
-print(f"Areas (N):       {adj.n}")
-print(f"Total edges:     {adj.W.nnz // 2}")  # symmetric, so divide by 2
-print(f"Mean neighbours: {adj.neighbour_counts().mean():.2f}")
-print(f"Min neighbours:  {adj.neighbour_counts().min()}")
-print(f"Max neighbours:  {adj.neighbour_counts().max()}")
+print(f"Areas (N):            {adj.n}")
+print(f"Total edges:          {adj.W.nnz // 2}")  # symmetric: divide by 2
+print(f"Mean neighbours:      {adj.neighbour_counts().mean():.2f}")
+print(f"Min neighbours:       {adj.neighbour_counts().min()}")
+print(f"Max neighbours:       {adj.neighbour_counts().max()}")
 print(f"Connected components: {adj.n_components()}")
-print(f"Scaling factor:  {adj.scaling_factor:.4f}")
+print(f"Scaling factor (s):   {adj.scaling_factor:.4f}")
 ```
 
-**What you should see:**
+**What you should see (10x10 queen grid):**
 
-```bash
-Areas (N):       100
-Total edges:     180
-Mean neighbours: 3.60
-Min neighbours:  1
-Max neighbours:  5
+```
+Areas (N):            100
+Total edges:          342
+Mean neighbours:      6.84
+Min neighbours:       3
+Max neighbours:       8
 Connected components: 1
-Scaling factor:  0.4263
+Scaling factor (s):   0.2644
 ```
 
-Corner cells have fewer neighbours than interior cells. The scaling factor -- 0.4263 in this case -- is a graph-level quantity that makes the spatial random effect variance-interpretable. We explain it in Part 7.
+Corner cells have 3 queen neighbours (right, below, diagonally below-right). Edge cells have 5. Interior cells have 8. The scaling factor -- 0.2644 in this case -- is a graph-level quantity that makes the spatial random effect variance-interpretable. We explain it in Part 7.
 
 ### The adjacency matrix as a sparse matrix
 
@@ -40,7 +40,7 @@ Corner cells have fewer neighbours than interior cells. The scaling factor -- 0.
 
 ```python
 # Inspect the structure
-print(f"W type: {type(adj.W)}")
+print(f"W type:  {type(adj.W)}")
 print(f"W shape: {adj.W.shape}")
 print(f"Density: {adj.W.nnz / (adj.n ** 2):.4f}")
 
@@ -51,7 +51,7 @@ neighbour_labels = [adj.areas[i] for i in neighbour_indices]
 print(f"Neighbours of r0c0: {neighbour_labels}")
 ```
 
-r0c0 is the top-left corner. With queen connectivity it has three neighbours: the cell to its right, the cell below, and the cell diagonally below-right.
+r0c0 is the top-left corner. With queen connectivity it has three neighbours: the cell to its right (r0c1), the cell below (r1c0), and the cell diagonally below-right (r1c1).
 
 ### Why the graph must be connected
 

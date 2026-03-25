@@ -8,7 +8,7 @@ Theory is one thing. In practice, monitoring reports fall into a small number of
 
 **Scenario 1: All green**
 
-PSI < 0.10, A/E within [0.95, 1.05] with CI containing 1.0, Gini stable, all CSI < 0.10.
+PSI < 0.10, A/E within [0.95, 1.05], Gini stable (p-value >= 0.32), all CSI < 0.10.
 
 Action: Log the result, no further investigation. File the report as evidence of ongoing monitoring. This is the outcome for most months on a stable book.
 

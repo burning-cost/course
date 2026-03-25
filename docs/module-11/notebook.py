@@ -774,7 +774,7 @@ summary_row = {
     "gini_cur":              float(results["gini"]["current"]),
     "gini_p_value":          float(results["gini"]["p_value"]),
     "gini_band":             results["gini"]["band"],
-    "psi_score":             float(psi_score),
+    "score_psi":             float(psi_score),
     "psi_band":              psi_band,
     "reference_n":           int(len(df_reference)),
     "current_n":             int(len(df_current)),
@@ -869,7 +869,7 @@ SELECT
     ae_ci_lower,
     ae_ci_upper,
     recommendation,
-    psi_score,
+    score_psi,
     gini_cur,
     gini_p_value
 FROM {TABLES["monitoring_log"]}

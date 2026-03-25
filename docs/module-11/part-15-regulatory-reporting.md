@@ -47,23 +47,23 @@ METRICS AND THRESHOLDS
 ----------------------
 1. Score PSI (Population Stability Index on predicted frequencies)
    Green:  PSI < 0.10
-   Amber:  0.10 <= PSI < 0.20
-   Red:    PSI >= 0.20
+   Amber:  0.10 <= PSI < 0.25
+   Red:    PSI >= 0.25
 
 2. A/E Ratio (Actual vs Expected claim frequency)
-   Green:  95% CI contains 1.0
-   Amber:  95% CI excludes 1.0 but ratio in [0.90, 1.10]
-   Red:    Ratio outside [0.90, 1.10]
+   Green:  Point estimate in [0.95, 1.05]
+   Amber:  Point estimate in [0.90, 0.95) or (1.05, 1.10]
+   Red:    Point estimate outside [0.80, 1.20]
 
-3. Gini Drift (DeLong test for change in AUC)
-   Green:  p-value > 0.10, or Gini drop < 0.03
-   Amber:  p-value 0.05-0.10, or p < 0.05 and drop < 0.03
-   Red:    p-value < 0.05 and Gini drop >= 0.03
+3. Gini Drift (bootstrap z-test, Algorithm 2 of arXiv 2510.04556)
+   Green:  p-value >= 0.32
+   Amber:  0.10 <= p-value < 0.32
+   Red:    p-value < 0.10
 
 4. Feature CSI (Characteristic Stability Index per feature)
    Green:  CSI < 0.10
-   Amber:  0.10 <= CSI < 0.20
-   Red:    CSI >= 0.20
+   Amber:  0.10 <= CSI < 0.25
+   Red:    CSI >= 0.25
 
 OVERALL STATUS
 --------------
@@ -73,7 +73,7 @@ GREEN:  All metrics GREEN
 
 ACTION TRIGGERS
 ---------------
-Recalibrate: A/E CI excludes 1.0 for two consecutive months, OR
+Recalibrate: A/E point estimate outside [0.95, 1.05] for two consecutive months, OR
              A/E point estimate outside [0.90, 1.10]
 Retrain:     Statistically significant Gini drop for two consecutive months, OR
              A/E outside [0.85, 1.15], OR
@@ -120,7 +120,7 @@ SELECT
     gini_ref,
     gini_cur,
     gini_p_value,
-    psi_score,
+    score_psi,
     reference_n,
     current_n,
     actual_claims,
@@ -146,7 +146,7 @@ for row in annual_pl.iter_rows(named=True):
           f"{row['recommendation']:<20} "
           f"{row['ae_ratio']:>8.4f}  "
           f"{row['gini_cur']:>10.4f}  "
-          f"{row['psi_score']:>8.4f}")
+          f"{row['score_psi']:>8.4f}")
 
 # Count by recommendation
 rec_counts = annual_pl.group_by("recommendation").len()

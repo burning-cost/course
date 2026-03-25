@@ -20,7 +20,7 @@ SELECT
     model_name,
     ae_ratio,
     recommendation,
-    psi_score
+    score_psi
 FROM main.motor_monitoring.monitoring_log
 WHERE
     recommendation IN ('RECALIBRATE', 'REFIT', 'INVESTIGATE', 'MONITOR_CLOSELY')
@@ -48,7 +48,7 @@ SELECT
     ae_ci_lower,
     ae_ci_upper,
     gini_cur,
-    psi_score,
+    score_psi,
     recommendation
 FROM main.motor_monitoring.monitoring_log
 WHERE

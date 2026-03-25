@@ -13,15 +13,13 @@ If the cluster has auto-terminated, go to **Compute** in the left sidebar, find 
 In the first cell:
 
 ```python
-%pip install insurance-spatial pymc arviz matplotlib --quiet
+%pip install insurance-spatial pymc arviz matplotlib "numpy<2.0" --quiet
 dbutils.library.restartPython()
 ```
 
 Wait for the restart message. The restart takes 30--60 seconds. After the restart, variables from before are gone -- that is expected. PyMC and ArviZ bring in several dependencies (pytensor, numpy, scipy) which are typically already installed in Databricks runtime environments but need to be explicitly requested here for version compatibility.
 
-**Compatibility note:** If PyMC installs but ArviZ fails to import with a numpy compatibility error, add `numpy<2.0` to the install command and restart: `%pip install insurance-spatial pymc arviz matplotlib "numpy<2.0" --quiet`. This is a known issue in the PyMC 5 / ArviZ 0.18 ecosystem on environments with newer numpy.
-
-**Compatibility note:** If PyMC installs but ArviZ fails to import with a numpy compatibility error, add `numpy<2.0` to the install command and restart: `%pip install insurance-spatial pymc arviz matplotlib "numpy<2.0" --quiet`. This is a known issue in the PyMC 5 / ArviZ 0.18 ecosystem on environments with newer numpy.
+**Compatibility note:** If PyMC installs but ArviZ fails to import with a numpy compatibility error, the `"numpy<2.0"` pin resolves it. This is a known issue in the PyMC 5 / ArviZ 0.18 ecosystem on environments with newer numpy. The pin is already included in the install command above.
 
 For a local environment instead:
 
@@ -29,7 +27,7 @@ For a local environment instead:
 uv add "insurance-spatial[geo]" pymc arviz matplotlib
 ```
 
-The `[geo]` extra installs geopandas and libpysal, which are required for the real-boundary section in Part 10. You do not need them for the synthetic data sections.
+The `[geo]` extra installs geopandas and libpysal, which are required for the real-boundary section in Part 15. You do not need them for the synthetic data sections.
 
 ### Confirming imports
 
@@ -45,19 +43,19 @@ from insurance_spatial.plots import plot_relativities, plot_trace
 import matplotlib.pyplot as plt
 import arviz as az
 
-print(f"NumPy:            {np.__version__}")
-print(f"Polars:           {pl.__version__}")
+print(f"NumPy:             {np.__version__}")
+print(f"Polars:            {pl.__version__}")
 print(f"insurance-spatial: imported OK")
-print(f"ArviZ:            {az.__version__}")
+print(f"ArviZ:             {az.__version__}")
 ```
 
 **What you should see:**
 
-```bash
-NumPy:            1.26.x
-Polars:           0.20.x
+```
+NumPy:             1.26.x
+Polars:            0.20.x
 insurance-spatial: imported OK
-ArviZ:            0.18.x
+ArviZ:             0.18.x
 ```
 
 If you see `ModuleNotFoundError: No module named 'pymc'`, the `%pip install` cell did not complete successfully. Run it again (making sure the cluster is connected) and restart again.

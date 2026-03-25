@@ -51,6 +51,8 @@ print(f"Significant:      {result.significant}")
 
 The test uses a bootstrap variance estimator (Algorithm 2 from arXiv 2510.04556) on both reference and current periods. The default significance level is alpha=0.32 (the "one-sigma rule" recommended by the paper for monitoring, which catches drift earlier than alpha=0.05 at the cost of more false positives). Use `alpha=0.05` for confirmatory testing.
 
+`gini_change` is `current_gini - reference_gini`: a negative value means discrimination has declined. `significant` is True when `p_value < alpha`.
+
 A p-value below the threshold means the Gini difference is statistically significant — the model's discrimination has changed, and it is unlikely to be due to random variation.
 
 ### Interpreting the result

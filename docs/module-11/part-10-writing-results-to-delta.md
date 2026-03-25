@@ -45,6 +45,7 @@ summary_row = {
     "gini_cur":        float(results["gini"]["current"]),
     "gini_p_value":    float(results["gini"]["p_value"]),
     "gini_band":       results["gini"]["band"],
+    "score_psi":       float(psi_score),          # computed in Part 4
     "reference_n":     int(len(df_reference)),
     "current_n":       int(len(df_current)),
     "actual_claims":   int(actual_cur.sum()),

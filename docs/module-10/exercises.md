@@ -14,7 +14,7 @@ Before starting: read Parts 1-17 of the tutorial. Every concept used here is exp
 
 **What you will do:** Diagnose the baseline GLM's residuals systematically before training the CANN. Build the intuition for where interaction signal lives.
 
-**Context.** You have the 100,000-policy synthetic motor portfolio from the tutorial. The baseline Poisson GLM has been fitted on main effects only. Two interactions were planted in the data: `age_band × vehicle_group` and `ncd_years × conviction_points`. Your job is to find them using only the GLM's residuals -- no CANN, no NID -- to understand what the automated pipeline is doing when it outperforms this manual approach.
+**Context.** You have the 100,000-policy synthetic motor portfolio from the tutorial. The baseline Poisson GLM has been fitted on main effects only. Two interactions were planted in the data: `age_band × vehicle_group` and `ncd_years × conviction_points` (the raw column from the dataset). In the GLM and CANN pipeline, `conviction_points > 0` is represented as the binary feature `has_convictions` in `X`, so the automated detector will surface the pair `ncd_years × has_convictions`. Here in Exercise 1, you diagnose residuals against the raw `conviction_points` column, which gives more diagnostic detail. Your job is to find both interactions using only the GLM's residuals -- no CANN, no NID -- to understand what the automated pipeline is doing when it outperforms this manual approach.
 
 ### Setup
 
@@ -360,7 +360,7 @@ for i, (q, c) in enumerate(zip(quick_top5, careful_top5), 1):
     print(f"{i:<6} {q:<40} {c:<40}  {match}")
 
 planted = {"age_band x vehicle_group", "vehicle_group x age_band",
-           "ncd_years x conviction_points", "conviction_points x ncd_years"}
+           "ncd_years x has_convictions", "has_convictions x ncd_years"}
 print(f"\nPlanted interactions in quick top-5:   "
       f"{sum(1 for p in quick_top5 if p in planted)}/2")
 print(f"Planted interactions in careful top-5: "
@@ -650,7 +650,7 @@ from glum import GeneralizedLinearRegressor
 X_pd = X.to_pandas()
 for col in ["area", "vehicle_group", "age_band", "annual_mileage"]:
     X_pd[col] = pd.Categorical(X_pd[col].astype(str))
-for col in ["ncd_years", "conviction_points"]:
+for col in ["ncd_years", "has_convictions"]:
     X_pd[col] = X_pd[col].astype(float)
 
 glm_manual = GeneralizedLinearRegressor(family="poisson", alpha=0.0, fit_intercept=True)
@@ -739,7 +739,7 @@ print(f"  BIC penalty per param: {np.log(n):.2f}")
 - `chi2` should be several hundred to a few thousand; `p_val` should be extremely small (typically < 1e-50 for the primary planted interaction).
 - `delta_aic` should be strongly negative (the interaction is highly worth its parameter cost). `delta_bic` should also be negative, but less so: with n=100,000, `log(n) ≈ 11.5`, so BIC penalises each parameter about 5.75 times more heavily than AIC. For the large planted interaction, both should improve.
 
-**If BIC worsens but AIC improves:** This would indicate the interaction is real but expensive. With 100,000 policies this is unlikely for the primary planted interaction, but it can happen for the secondary one (ncd × conviction_points) if the n_cells count is high relative to the deviance gain.
+**If BIC worsens but AIC improves:** This would indicate the interaction is real but expensive. With 100,000 policies this is unlikely for the primary planted interaction, but it can happen for the secondary one (ncd × has_convictions) if the n_cells count is high relative to the deviance gain.
 
 </details>
 
@@ -796,9 +796,9 @@ for name, coef in sorted(zip(ix_cols, ix_coefs), key=lambda x: abs(x[1]), revers
 
 **Task 4.** The planted interaction for `age_band × vehicle_group` was a log-additive 0.30 penalty for policies where `age_band ∈ {17-21, 22-25}` AND `vehicle_group ∈ {41-50}`. In the enhanced GLM, this interaction is represented as binary contrast columns: look for `_ix_age_band_17-21_X_vehicle_group_41-50` and `_ix_age_band_22-25_X_vehicle_group_41-50`. Find those coefficients and check whether they are close to +0.30. Why might they differ?
 
-**Task 5.** The second planted interaction (`ncd_years == 0` AND `conviction_points > 0`) was a log-additive 0.20 penalty. `ncd_years` is a continuous integer feature and `has_convictions` is a binary feature in `X`, so the library encodes this interaction as `(L - 1)` columns (one per non-reference level of the categorical, multiplied by the continuous variable). Look for columns starting with `_ix_has_convictions_` or `_ix_ncd_years_` in the enhanced GLM. Are the coefficients close to +0.20?
+**Task 5.** The second planted interaction (`ncd_years == 0` AND `conviction_points > 0`) was a log-additive 0.20 penalty. `ncd_years` is a continuous integer feature and `has_convictions` is stored as `pl.Int32` (not Categorical), so the library treats both as continuous and creates a single product column. Look for a column named `_ix_ncd_years_has_convictions` in the enhanced GLM's `feature_names_`. The coefficient should be close to +0.20.
 
-Note: the exact column naming depends on which features the detector identified as interacting. If `ncd_years × has_convictions` was suggested, the library creates `_ix_has_convictions_1_ncd_years` (one column, since `has_convictions` has 2 levels: 0 and 1, and level 0 is the reference).
+Note: because both features are numeric (not Categorical), the interaction is a plain product term: `ncd_years * has_convictions`. This captures the effect: when `has_convictions == 0`, the term is always zero; when `has_convictions == 1`, the term equals `ncd_years`. The planted interaction penalises `ncd_years == 0` and `has_convictions == 1` simultaneously — the product column correctly encodes this as a single slope that is non-zero only when both are active.
 
 <details>
 <summary>Hint for Task 4</summary>
@@ -888,10 +888,11 @@ for pattern in target_patterns:
             print(f"  {c}: coef = {coef:+.4f}  (relativity = {np.exp(coef):.3f})")
 
 # Task 5: Recover the planted ncd x conviction interaction
-# For cat x continuous: column is _ix_{cat}_{level}_{cont} where level is the non-reference level
-print("\nTask 5: Planted interaction recovery (ncd_years / has_convictions)")
+# Both ncd_years and has_convictions are pl.Int32 (not Categorical), so the library
+# encodes the interaction as a plain product column: _ix_ncd_years_has_convictions
+print("\nTask 5: Planted interaction recovery (ncd_years x has_convictions)")
 print("  Planted: +0.20 log-units when ncd_years=0 and has_convictions=1")
-print("  Expected relativity: exp(0.20) = 1.221")
+print("  Library encoding: product term _ix_ncd_years_has_convictions (1 parameter)")
 ncd_ix_cols = [(c, enhanced_glm.coef_[coef_names.index(c)])
                for c in ix_cols if "ncd" in c or "conviction" in c]
 for name, coef in sorted(ncd_ix_cols, key=lambda x: x[0]):
@@ -904,7 +905,7 @@ for name, coef in sorted(ncd_ix_cols, key=lambda x: x[0]):
 
 - **Task 4 recovery:** The interaction coefficients for (17-21, 41-50) and (22-25, 41-50) should be in the range +0.20 to +0.35. They will not be exactly +0.30 because: (1) the GLM adds an interaction parameter for every (age, vg) cell combination, not just the planted ones, so the estimation is noisy; (2) the intercept and main effects absorb some of the interaction signal; and (3) finite sample size means the MLE has sampling error.
 
-- **Task 5 recovery:** For the flat 0.20 interaction, you may see coefficients ranging from +0.10 to +0.30 across the three conviction_points levels. The GLM gives each cell a separate estimate rather than knowing the true structure is flat. This is expected: the GLM does not know the data generation process. If the GLM's estimates vary substantially across conviction_points levels despite a flat planted interaction, this is evidence of noise -- which is exactly why you want credibility smoothing (the subject of the Bayesian pricing module).
+- **Task 5 recovery:** The `_ix_ncd_years_has_convictions` coefficient should be close to +0.20. It will not be exact: finite sample size means the MLE has sampling error, and the intercept and main effects absorb some of the interaction signal. The coefficient may land anywhere from +0.10 to +0.30. This single coefficient is more stable than cell-level estimates would be, which is one advantage of treating both features as continuous.
 
 </details>
 
@@ -953,13 +954,38 @@ X_test_pd = X_test.to_pandas()
 for col in ["area", "vehicle_group", "age_band", "annual_mileage"]:
     X_test_pd[col] = pd.Categorical(X_test_pd[col].astype(str))
 
-# Add interaction columns for each suggested pair
-for f1, f2 in suggested_train:
-    X_test_pd[f"_ix_{f1}_{f2}"] = pd.Categorical(
-        X_test_pd[f1].astype(str) + "_X_" + X_test_pd[f2].astype(str)
-    )
+# The library encodes interactions as binary contrast columns (numeric, not categorical).
+# For categorical x categorical: one column per non-reference (level_1, level_2) combination,
+# named _ix_{feat1}_{level1}_X_{feat2}_{level2}.
+# We need the training-set category lists to determine the non-reference levels.
+X_train_pd_ref = X_train.to_pandas()
+for col in ["area", "vehicle_group", "age_band", "annual_mileage"]:
+    X_train_pd_ref[col] = pd.Categorical(X_train_pd_ref[col].astype(str))
 
-mu_enhanced_test = enhanced_glm_train.predict(X_test_pd)
+X_test_int = X_test_pd.copy()
+for f1, f2 in suggested_train:
+    is_cat_f1 = X_test_pd[f1].dtype.name == "category"
+    is_cat_f2 = X_test_pd[f2].dtype.name == "category"
+    if is_cat_f1 and is_cat_f2:
+        cats1 = sorted(X_train_pd_ref[f1].cat.categories.tolist())
+        cats2 = sorted(X_train_pd_ref[f2].cat.categories.tolist())
+        for v1 in cats1[1:]:
+            ind1 = (X_test_pd[f1] == v1).astype(float)
+            for v2 in cats2[1:]:
+                ind2 = (X_test_pd[f2] == v2).astype(float)
+                X_test_int[f"_ix_{f1}_{v1}_X_{f2}_{v2}"] = ind1 * ind2
+    elif is_cat_f1:
+        cats1 = sorted(X_train_pd_ref[f1].cat.categories.tolist())
+        for v1 in cats1[1:]:
+            X_test_int[f"_ix_{f1}_{v1}_{f2}"] = (X_test_pd[f1] == v1).astype(float) * X_test_pd[f2]
+    elif is_cat_f2:
+        cats2 = sorted(X_train_pd_ref[f2].cat.categories.tolist())
+        for v2 in cats2[1:]:
+            X_test_int[f"_ix_{f1}_{f2}_{v2}"] = X_test_pd[f1] * (X_test_pd[f2] == v2).astype(float)
+    else:
+        X_test_int[f"_ix_{f1}_{f2}"] = X_test_pd[f1] * X_test_pd[f2]
+
+mu_enhanced_test = enhanced_glm_train.predict(X_test_int)
 ```
 
 **Task 4.** Compute the out-of-sample deviance improvement:
@@ -975,9 +1001,9 @@ Compare this to the in-sample improvement from Exercise 5. Is the out-of-sample 
 <details>
 <summary>Hint for Task 3</summary>
 
-When scoring the test set, you must construct the interaction categorical column with the same levels that appeared in training. If a (age_band, vehicle_group) combination appears in the test set but not in training, the GLM will assign a coefficient of 0 for that level (because it has no estimate). This is correct behaviour: unknown level = baseline.
+The library encodes interactions as binary contrast columns — plain numeric 0.0 or 1.0, not `pd.Categorical`. For a categorical × categorical interaction, you get `(L1 - 1) × (L2 - 1)` columns, one per non-reference level pair.
 
-The binary contrast columns are plain numeric (0.0 or 1.0), not categorical, so there is no issue with unseen levels. For a test-set policy in a (age, vehicle_group) combination not seen in training, all contrast columns for that combination will be 0 — meaning it gets the baseline interaction effect, which is the correct handling.
+When constructing these columns for the test set, use the training-set category lists to determine the non-reference levels. A test-set policy in a (age_band, vehicle_group) combination not seen during training will have all its interaction contrast columns set to 0, which means the model assigns it the baseline interaction effect. This is the correct behaviour and requires no special handling.
 
 </details>
 
@@ -1314,9 +1340,9 @@ if SHAP_AVAILABLE:
 
     # Task 4: Planted interactions in rankings
     planted = [("age_band", "vehicle_group"), ("vehicle_group", "age_band"),
-               ("ncd_years", "conviction_points"), ("conviction_points", "ncd_years")]
+               ("ncd_years", "has_convictions"), ("has_convictions", "ncd_years")]
 
-    for f1, f2 in [("age_band", "vehicle_group"), ("ncd_years", "conviction_points")]:
+    for f1, f2 in [("age_band", "vehicle_group"), ("ncd_years", "has_convictions")]:
         row = tbl.filter(
             ((pl.col("feature_1") == f1) & (pl.col("feature_2") == f2)) |
             ((pl.col("feature_1") == f2) & (pl.col("feature_2") == f1))
@@ -1337,7 +1363,7 @@ if SHAP_AVAILABLE:
     print(f"\nTop-3 by consensus: {top3_consensus}")
     planted_in_top3 = sum(1 for p in top3_consensus
                           if any(plant in p for plant in
-                                 ["age_band", "vehicle_group", "ncd_years", "conviction_points"]))
+                                 ["age_band", "vehicle_group", "ncd_years", "has_convictions"]))
     print(f"Planted interactions in top-3 consensus: {planted_in_top3}/2")
 ```
 
@@ -1550,7 +1576,7 @@ print(f"  Severity only:    {sorted(only_sev)}")
 
 - The severity dataset is smaller than the frequency dataset (only claim-level rows), which reduces the training signal for the CANN.
 - The planted severity interaction (`age_band × vehicle_group`) should appear in the NID top-5, but its NID score normalised will typically be lower than the corresponding frequency interaction because claim amounts are noisy.
-- Frequency and severity interactions can legitimately differ. Young drivers × high vehicle groups have supermultiplicative frequency (more accidents) AND supermultiplicative severity (more serious accidents). Area × vehicle group may affect frequency (urban accident rates) without affecting severity. `ncd_years × conviction_points` is planted in frequency but not severity -- so it should appear in the frequency NID top-5 but not the severity one.
+- Frequency and severity interactions can legitimately differ. Young drivers × high vehicle groups have supermultiplicative frequency (more accidents) AND supermultiplicative severity (more serious accidents). Area × vehicle group may affect frequency (urban accident rates) without affecting severity. `ncd_years × has_convictions` is planted in frequency but not severity — so it should appear in the frequency NID top-5 but not the severity one.
 
 </details>
 
@@ -1611,7 +1637,7 @@ spark.createDataFrame(
 
 Then read it back with `spark.table("training.module10.interaction_results").show(5)` to confirm the write succeeded.
 
-**Task 5.** Write a helper function `score_new_policies(new_X, enhanced_glm, interaction_pairs)` that takes a new Polars DataFrame (representing policies not seen during training) and returns their predicted claim frequencies from the enhanced GLM. Handle the case where a new policy has an unseen level for an interaction cell (use the string concatenation approach from Exercise 6 that does not create `pd.Categorical` on the interaction column).
+**Task 5.** Write a helper function `score_new_policies(new_X, enhanced_glm, interaction_pairs)` that takes a new Polars DataFrame (representing policies not seen during training) and returns their predicted claim frequencies from the enhanced GLM. Construct the interaction columns using binary contrast columns (plain numeric, as in the Exercise 6 solution), not as a combined categorical. Unseen (level_1, level_2) combinations will have all their contrast columns set to 0, which gives the baseline interaction effect — the correct treatment.
 
 <details>
 <summary>Hint for Task 1</summary>
@@ -1767,15 +1793,36 @@ print("\nTask 4: Written to training.module10.interaction_results")
 spark.table("training.module10.interaction_results").show(5)
 
 # Task 5: Scoring function
+# The correct approach for production: reconstruct exactly the interaction columns
+# the model was trained on, identified from enhanced_glm.feature_names_.
+# This avoids the category-reference-level problem: new data may not have all
+# training categories present, and using new_X categories to determine the
+# reference level gives wrong column names if any category is absent.
+
 def score_new_policies(
     new_X: pl.DataFrame,
     enhanced_glm,
     interaction_pairs: list,
+    train_X_pd: "pd.DataFrame",  # training pandas DataFrame with pd.Categorical columns
 ) -> np.ndarray:
     """Score new policies with the interaction-enhanced GLM.
 
-    Handles unseen interaction levels gracefully by using string
-    concatenation (not pd.Categorical) for the interaction columns.
+    Uses training-set category lists to construct interaction columns with the
+    same reference levels and column names as the model was trained on. Unseen
+    (level_1, level_2) combinations default to 0, giving the baseline interaction
+    effect — the correct treatment for novel combinations.
+
+    Parameters
+    ----------
+    new_X:
+        New policies as Polars DataFrame (same schema as training X).
+    enhanced_glm:
+        Fitted glum GeneralizedLinearRegressor with interaction columns.
+    interaction_pairs:
+        List of (feature_1, feature_2) tuples from suggest_interactions().
+    train_X_pd:
+        Training DataFrame as pandas with pd.Categorical columns — used to
+        determine the reference levels (sorted first category) for each feature.
     """
     new_X_pd = new_X.to_pandas()
     for col in ["area", "vehicle_group", "age_band", "annual_mileage"]:
@@ -1783,22 +1830,23 @@ def score_new_policies(
             new_X_pd[col] = pd.Categorical(new_X_pd[col].astype(str))
 
     for f1, f2 in interaction_pairs:
-        is_cat_f1 = new_X_pd[f1].dtype.name == "category"
-        is_cat_f2 = new_X_pd[f2].dtype.name == "category"
+        is_cat_f1 = f1 in train_X_pd.columns and train_X_pd[f1].dtype.name == "category"
+        is_cat_f2 = f2 in train_X_pd.columns and train_X_pd[f2].dtype.name == "category"
         if is_cat_f1 and is_cat_f2:
-            cats1 = sorted(new_X_pd[f1].cat.categories.tolist())
-            cats2 = sorted(new_X_pd[f2].cat.categories.tolist())
+            # Use TRAINING categories for reference levels, not new data categories
+            cats1 = sorted(train_X_pd[f1].cat.categories.tolist())
+            cats2 = sorted(train_X_pd[f2].cat.categories.tolist())
             for v1 in cats1[1:]:
                 ind1 = (new_X_pd[f1] == v1).astype(float)
                 for v2 in cats2[1:]:
                     ind2 = (new_X_pd[f2] == v2).astype(float)
                     new_X_pd[f"_ix_{f1}_{v1}_X_{f2}_{v2}"] = ind1 * ind2
         elif is_cat_f1:
-            cats1 = sorted(new_X_pd[f1].cat.categories.tolist())
+            cats1 = sorted(train_X_pd[f1].cat.categories.tolist())
             for v1 in cats1[1:]:
                 new_X_pd[f"_ix_{f1}_{v1}_{f2}"] = (new_X_pd[f1] == v1).astype(float) * new_X_pd[f2]
         elif is_cat_f2:
-            cats2 = sorted(new_X_pd[f2].cat.categories.tolist())
+            cats2 = sorted(train_X_pd[f2].cat.categories.tolist())
             for v2 in cats2[1:]:
                 new_X_pd[f"_ix_{f1}_{f2}_{v2}"] = new_X_pd[f1] * (new_X_pd[f2] == v2).astype(float)
         else:
@@ -1807,8 +1855,13 @@ def score_new_policies(
     return np.clip(enhanced_glm.predict(new_X_pd), 1e-8, None)
 
 # Test scoring on a small sample
+# Build the training reference DataFrame (same X_pd used when fitting enh_lib)
+X_pd_ref = X.to_pandas()
+for col in ["area", "vehicle_group", "age_band", "annual_mileage"]:
+    X_pd_ref[col] = pd.Categorical(X_pd_ref[col].astype(str))
+
 sample = X[:10]
-mu_sample = score_new_policies(sample, enh_lib, sug_lib)
+mu_sample = score_new_policies(sample, enh_lib, sug_lib, train_X_pd=X_pd_ref)
 print(f"\nTask 5: Sample predictions for first 10 policies:")
 print(np.round(mu_sample, 5))
 ```
@@ -2039,7 +2092,7 @@ from typing import Optional
 
 REQUIRED_COLUMNS = [
     "area", "vehicle_group", "ncd_years", "age_band",
-    "conviction_points", "annual_mileage",
+    "has_convictions", "annual_mileage",
 ]
 
 CATEGORICAL_COLUMNS = ["area", "vehicle_group", "age_band", "annual_mileage"]
@@ -2089,6 +2142,11 @@ def score_policies(
         is_cat_f1 = X_pd[f1].dtype.name == "category"
         is_cat_f2 = X_pd[f2].dtype.name == "category"
         if is_cat_f1 and is_cat_f2:
+            # IMPORTANT: categories must match training-set reference levels.
+            # In production, pass only categories present at training time (passed via
+            # the Categorical dtype from the same category list used during fitting).
+            # If scoring against a restricted subset of policies, some categories may
+            # be absent — those cells will correctly default to 0 (baseline effect).
             cats1 = sorted(X_pd[f1].cat.categories.tolist())
             cats2 = sorted(X_pd[f2].cat.categories.tolist())
             for v1 in cats1[1:]:
@@ -2154,7 +2212,7 @@ print("Scoring function: OK")
 ### Change description
 Addition of two pairwise interaction terms to the Poisson frequency GLM:
 1. `age_band × vehicle_group` (20 new parameters)
-2. `ncd_years × conviction_points` (4 new parameters)
+2. `ncd_years × has_convictions` (1 new parameter)
 
 ### Evidence basis
 Detected via CANN-NID pipeline (insurance-interactions v0.1.0) on 100,000-policy synthetic motor portfolio.
@@ -2162,7 +2220,7 @@ Detected via CANN-NID pipeline (insurance-interactions v0.1.0) on 100,000-policy
 | Interaction | NID rank | delta_deviance | delta_deviance_pct | LR chi2 | Bonferroni p | Recommended |
 |---|---|---|---|---|---|---|
 | age_band × vehicle_group | 1 | see output | ~1.2% | high | <0.001 | True |
-| ncd_years × conviction_points | 2 | see output | ~0.3% | high | <0.001 | True |
+| ncd_years × has_convictions | 2 | see output | ~0.3% | high | <0.001 | True |
 
 Joint deviance improvement: ~1.5%. Joint AIC improvement: confirmed. BIC improvement: confirmed.
 

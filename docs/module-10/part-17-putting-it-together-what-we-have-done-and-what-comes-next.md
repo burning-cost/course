@@ -10,7 +10,7 @@ In this module we:
 
 3. Applied NID to the trained CANN weight matrices to get a ranked list of candidate interaction pairs in milliseconds.
 
-4. Tested the top 15 candidates using likelihood-ratio tests with Bonferroni correction, confirming the two planted interactions (age band × vehicle group and NCD × conviction points) as statistically significant.
+4. Tested the top 15 candidates using likelihood-ratio tests with Bonferroni correction, confirming the two planted interactions (age band × vehicle group and NCD × has_convictions) as statistically significant.
 
 5. Rebuilt the GLM jointly with the approved interaction terms, achieving a deviance improvement of around 1.5-2% with 20-25 new parameters.
 

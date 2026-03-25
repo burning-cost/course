@@ -32,7 +32,7 @@ print(f"IMD-risk corr:    {np.corrcoef(imd_scaled, true_log_effect)[0,1]:.4f}")
 
 ### Fitting with covariates
 
-Pass the scaled covariate as a 2D array (N, P) where P is the number of covariates:
+Pass the scaled covariate as a 2D array of shape (N, P) where P is the number of covariates. Here P=1.
 
 ```python
 model_cov = BYM2Model(
@@ -55,7 +55,7 @@ print("Covariate model fitted.")
 
 ### Interpreting the covariate coefficient
 
-After fitting, the `beta` parameter in the trace is the log-scale coefficient for IMD. A posterior mean of 0.15 means that a one-standard-deviation increase in IMD score is associated with a exp(0.15) = 1.16, or 16%, higher expected claim frequency, holding the spatial random effect constant.
+After fitting, the `beta` parameter in the trace is the log-scale coefficient for IMD. A posterior mean of 0.15 means that a one-standard-deviation increase in IMD score is associated with exp(0.15) = 1.16, or 16%, higher expected claim frequency, holding the spatial random effect constant.
 
 ```python
 import arviz as az
@@ -73,13 +73,15 @@ If the 95% credibility interval on beta excludes zero, the covariate is adding g
 
 ### Does adding the covariate change the territory factors?
 
+`rels` is the relativity DataFrame from Part 11 (the model without covariates). If you have not run Part 11 yet, compute it now: `rels = result.territory_relativities()`.
+
 ```python
 rels_cov = result_cov.territory_relativities()
 
 # Compare the range of b_mean (log-scale spatial effects)
-rels_nocov = result.territory_relativities()  # assign first to avoid calling the method twice
-print(f"Without covariate: b range [{rels_nocov['b_mean'].min():.4f}, "
-      f"{rels_nocov['b_mean'].max():.4f}]")
+# rels was computed in Part 11 from the no-covariate model
+print(f"Without covariate: b range [{rels['b_mean'].min():.4f}, "
+      f"{rels['b_mean'].max():.4f}]")
 print(f"With IMD covariate: b range [{rels_cov['b_mean'].min():.4f}, "
       f"{rels_cov['b_mean'].max():.4f}]")
 ```

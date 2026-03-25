@@ -112,6 +112,9 @@ A PSI above 0.25 means the score distribution has shifted significantly. This is
 Store the PSI result:
 
 ```python
-# Store for use in MonitoringReport (Part 8)
-psi_score = psi_score  # already a float — pass directly as score_reference/score_current
+# Store the scalar PSI score for later comparison.
+# Note: MonitoringReport.score_reference and score_current expect full score
+# arrays (not this scalar) — the report computes PSI internally from those arrays.
+# See Part 8 for the correct MonitoringReport construction.
+print(f"PSI score stored: {psi_score:.4f}")
 ```

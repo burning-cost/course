@@ -31,7 +31,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-**What to look for:** The pair `age_band × vehicle_group` should rank first or second. The second planted interaction — `ncd_years × conviction_points` — should also appear in the top 5. If neither appears in the top 10, the CANN training may not have converged — try increasing `cann_n_epochs` to 500 or reducing the learning rate to `5e-4`.
+**What to look for:** The pair `age_band × vehicle_group` should rank first or second. The second planted interaction — `ncd_years × has_convictions` — should also appear in the top 5. If neither appears in the top 10, the CANN training may not have converged — try increasing `cann_n_epochs` to 500 or reducing the learning rate to `5e-4`.
 
 ### Understanding the NID scores in context
 

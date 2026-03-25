@@ -90,7 +90,7 @@ print("All imports: OK")
 
 # COMMAND ----------
 
-df_raw = pl.from_pandas(load_motor(n_policies=100_000, seed=42))
+df_raw = load_motor(n_policies=100_000, seed=42, polars=True)
 
 # Plant the two known interactions
 df = df_raw.with_columns(

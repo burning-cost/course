@@ -8,7 +8,8 @@ import polars as pl
 import numpy as np
 
 # Same 100,000-policy portfolio as all previous modules
-df_raw = pl.from_pandas(load_motor(n_policies=100_000, seed=42))
+# polars=True returns a Polars DataFrame directly
+df_raw = load_motor(n_policies=100_000, seed=42, polars=True)
 ```
 
 This module needs two planted interactions that we demonstrate the neural interaction detector can find:
@@ -98,3 +99,5 @@ print(X["area"].value_counts().sort("area"))
 ```
 
 **Why we discretise:** GLMs in personal lines pricing work with banded continuous variables. A 50-level vehicle group becomes a 5-band version, reducing parameter count and improving credibility. The interaction detection pipeline works on whatever feature representation you give it. Using the banded version here keeps the tutorial consistent with what you would do in production.
+
+Note on the feature set: `X` contains `has_convictions` (binary integer: 1 if conviction_points > 0, stored as `pl.Int32`) rather than the raw `conviction_points` integer. The second planted interaction is between `ncd_years` (continuous integer, 0-5) and `has_convictions` (binary integer 0/1). Since neither column has a Polars Categorical or String dtype, the library treats both as continuous and encodes the interaction as a single product column `_ix_ncd_years_has_convictions` — one new parameter. This is the correct encoding: effectively a slope on `ncd_years` that switches on when `has_convictions == 1`.

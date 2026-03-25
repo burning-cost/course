@@ -20,7 +20,7 @@ Suppose your model was trained and validated on a portfolio where 5% of policies
 
 The model has not changed. The model's performance on young drivers has not changed. But the *importance* of getting young drivers right has tripled. This is enough reason to retrain - not because the model is wrong, but because the model's weak segments now represent a larger share of premium.
 
-PSI catches this. A PSI above 0.2 on driver age, driven by the shift in the under-25 bucket, is a signal that you need to revisit your model's performance specifically for that segment.
+PSI catches this. A PSI above 0.25 on driver age, driven by the shift in the under-25 bucket, is a signal that you need to revisit your model's performance specifically for that segment.
 
 ### Why concept drift matters even if the book mix is stable
 

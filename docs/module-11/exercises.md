@@ -98,6 +98,9 @@ exposure_cur = df_current["exposure"].to_numpy()
 expected_ref = pred_ref * exposure_ref
 expected_cur = pred_cur * exposure_cur
 
+actual_ref = df_reference["claim_count"].to_numpy().astype(float)
+actual_cur = df_current["claim_count"].to_numpy().astype(float)
+
 print(f"\nReference predictions: mean={pred_ref.mean():.4f}")
 print(f"Current predictions:   mean={pred_cur.mean():.4f}")
 print("\nSetup complete.")
@@ -166,7 +169,7 @@ print("(green if < 0.10, amber if 0.10-0.25, red if > 0.25)")
 
 **Question 2a:** Why does the library result differ from your manual result? The library accepts `exposure_weights` (for the current period) and `reference_exposure` (for the reference period) arguments. Write one paragraph explaining what the exposure-weighted PSI measures and why unweighted PSI can mislead on insurance data. Give a concrete example of the type of seasonal portfolio composition that would cause unweighted PSI to flag a false positive.
 
-**Question 2b:** The thresholds (0.10 / 0.20) originate from credit scoring in the 1980s. Name one structural difference between a credit scoring application and a UK motor frequency model that might mean these thresholds are calibrated poorly for insurance. Should the threshold be higher or lower for motor, and why?
+**Question 2b:** The thresholds (0.10 / 0.25) originate from credit scoring in the 1980s. Name one structural difference between a credit scoring application and a UK motor frequency model that might mean these thresholds are calibrated poorly for insurance. Should the threshold be higher or lower for motor, and why?
 
 ### Task 3: Diagnose where the shift is concentrated
 
@@ -367,9 +370,6 @@ Further investigation is warranted even when CSI is below amber if the new categ
 ### Task 1: Portfolio-level A/E
 
 ```python
-
-actual_cur  = df_current["claim_count"].to_numpy().astype(float)
-
 ae_result = ae_ratio_ci(
     actual=actual_cur,
     predicted=expected_cur,
@@ -485,12 +485,11 @@ print(f"Manual: A/E={ae_point:.4f}, CI=[{ci_lo:.4f}, {ci_hi:.4f}]")
 
 **References:** Tutorial Part 7.
 
-**What this exercise covers:** Falling Gini and rising A/E are different problems requiring different solutions. This exercise makes you compute Gini drift, interpret the DeLong z-test, and distinguish between the two failure modes.
+**What this exercise covers:** Falling Gini and rising A/E are different problems requiring different solutions. This exercise makes you compute Gini drift, interpret the bootstrap z-test result, and distinguish between the two failure modes.
 
 ### Task 1: Compute Gini drift
 
 ```python
-
 y_ref = (df_reference["claim_count"] > 0).to_numpy().astype(int)
 y_cur = (df_current["claim_count"] > 0).to_numpy().astype(int)
 
@@ -509,9 +508,12 @@ gini_result = gini_drift_test(
 
 print(f"Gini (reference):  {gini_result.reference_gini:.4f}")
 print(f"Gini (current):    {gini_result.current_gini:.4f}")
-print(f"Change:            {gini_result.current_gini - gini_result.reference_gini:+.4f}")
+print(f"Change:            {gini_result.gini_change:+.4f}")
 print(f"Z-statistic:       {gini_result.z_statistic:.4f}")
 print(f"P-value:           {gini_result.p_value:.4f}")
+# Using conventional statistical thresholds (5%/10%) for confirmatory testing.
+# The library defaults (from arXiv 2510.04556) use different bands for routine
+# monitoring dashboards — see Part 8 for that approach.
 gini_band = "red" if gini_result.p_value < 0.05 else "amber" if gini_result.p_value < 0.10 else "green"
 print(f"Traffic light:     {gini_band}")
 ```
@@ -574,7 +576,7 @@ for low, high, label in [(17, 25, "17-24"), (40, 60, "40-59")]:
     print(
         f"{label}: ref={seg_result.reference_gini:.4f}, "
         f"cur={seg_result.current_gini:.4f}, "
-        f"change={seg_result.current_gini - seg_result.reference_gini:+.4f}, "
+        f"change={seg_result.gini_change:+.4f}, "
         f"p={seg_result.p_value:.4f}"
     )
 ```
@@ -585,7 +587,7 @@ for low, high, label in [(17, 25, "17-24"), (40, 60, "40-59")]:
 
 **Question 4b:** Suppose you observe A/E = 1.12 (CI excludes 1.0) and Gini has fallen by 0.04 (p = 0.02). Write out the appropriate response in order of steps, explaining what applying a recalibration factor in isolation would and would not fix.
 
-**Question 4c:** The DeLong test compares AUCs rather than Ginis directly. Gini = 2 * AUC - 1. Does the direction of the conversion matter when interpreting the p-value? Explain in one sentence.
+**Question 4c:** The library uses a bootstrap z-test (Algorithm 2 of arXiv 2510.04556), not the DeLong test. The default significance level is alpha=0.32, not the conventional 0.05. Why does the paper recommend 0.32 for routine monitoring, and when would you switch to alpha=0.05?
 
 <details>
 <summary>Solution — Exercise 4</summary>
@@ -594,7 +596,7 @@ for low, high, label in [(17, 25, "17-24"), (40, 60, "40-59")]:
 
 **Answer to 4b:** Step 1: Apply a temporary recalibration factor (1/1.12 ≈ 0.893) to restore the portfolio average to correct calibration. Document the factor, the trigger, and the date in the recalibration history table. Step 2: Immediately initiate a retraining assessment. A falling Gini means the model's risk ranking is degrading — applying a multiplicative scalar to all predictions preserves the ranking, so the recalibration does nothing to fix the discrimination problem. Step 3: Schedule a model retraining on data from the current period. Step 4: Escalate to the head of pricing if the Gini drop persists into the following month.
 
-**Answer to 4c:** No — since Gini = 2 * AUC - 1 is a monotone transformation, a statistically significant difference in AUCs is identical to a statistically significant difference in Ginis; the p-value is unchanged by the rescaling.
+**Answer to 4c:** Alpha=0.32 (the one-sigma rule) is recommended for routine monitoring because in a monitoring context a missed real deterioration (Type II error) is costlier than a false alarm (Type I error). Frequent signals at alpha=0.32 prompt human review early; the formal governance escalation decision uses alpha=0.05. Switch to alpha=0.05 when you need a formal confirmatory test — for example, when deciding whether to trigger a full retraining and model validation cycle, or when producing evidence for a regulatory submission.
 
 </details>
 
@@ -609,9 +611,6 @@ for low, high, label in [(17, 25, "17-24"), (40, 60, "40-59")]:
 ### Task 1: Assemble and print the report
 
 ```python
-# actual_ref and exposure_ref come from the shared setup cell
-actual_ref = df_reference["claim_count"].to_numpy().astype(float)
-
 report = MonitoringReport(
     reference_actual=actual_ref,
     reference_predicted=pred_ref,
@@ -772,7 +771,7 @@ def recalibration_recommendation(
     ae_ratio     : float  — current month's A/E point estimate
     ae_ci_lower  : float  — lower bound of 95% CI
     ae_ci_upper  : float  — upper bound of 95% CI
-    gini_p_value : float  — p-value from DeLong test
+    gini_p_value : float  — p-value from bootstrap z-test (arXiv 2510.04556)
     gini_change  : float  — gini_cur - gini_ref (negative = declining)
     history      : pl.DataFrame or None
         Columns: current_date, ae_ci_lower, ae_ci_upper
@@ -983,7 +982,7 @@ annual_history = pl.DataFrame({
         0.55, 0.31, 0.28, 0.19,
         0.22, 0.25, 0.48, 0.65,
     ],
-    "psi_score": [
+    "score_psi": [
         0.04, 0.05, 0.04, 0.06,
         0.07, 0.09, 0.11, 0.12,
         0.10, 0.09, 0.07, 0.05,
@@ -1007,7 +1006,7 @@ for row in annual_history.iter_rows(named=True):
     print(
         f"{row['current_date']:<12} {row['overall_traffic_light']:<10} "
         f"{row['ae_ratio']:>8.4f}  {row['gini_cur']:>8.4f}  "
-        f"{row['psi_score']:>8.4f}  {action}"
+        f"{row['score_psi']:>8.4f}  {action}"
     )
 
 # Traffic light distribution
@@ -1078,23 +1077,23 @@ METRICS AND THRESHOLDS
 ----------------------
 1. Score PSI (Population Stability Index)
    Green:  PSI < 0.10
-   Amber:  0.10 <= PSI < 0.20
-   Red:    PSI >= 0.20
+   Amber:  0.10 <= PSI < 0.25
+   Red:    PSI >= 0.25
 
 2. A/E Ratio (Actual vs Expected claim frequency)
-   Green:  95% CI contains 1.0
-   Amber:  95% CI excludes 1.0, ratio in [0.90, 1.10]
-   Red:    Ratio outside [0.90, 1.10]
+   Green:  A/E in [0.95, 1.05]
+   Amber:  A/E in [0.90, 1.10] (outside green)
+   Red:    A/E outside [0.80, 1.20]
 
-3. Gini Drift (DeLong z-test on AUC)
-   Green:  p-value > 0.10, or Gini drop < 0.03
-   Amber:  p-value 0.05-0.10, or p < 0.05 and drop < 0.03
-   Red:    p-value < 0.05 and Gini drop >= 0.03
+3. Gini Drift (bootstrap z-test, arXiv 2510.04556)
+   Green:  p-value >= 0.32
+   Amber:  0.10 <= p-value < 0.32
+   Red:    p-value < 0.10
 
 4. Feature CSI (per feature)
    Green:  CSI < 0.10
-   Amber:  0.10 <= CSI < 0.20
-   Red:    CSI >= 0.20
+   Amber:  0.10 <= CSI < 0.25
+   Red:    CSI >= 0.25
 
 OVERALL STATUS
 --------------
@@ -1137,7 +1136,7 @@ Escalation:     CRO / Actuarial Function Holder
 # Answer to Question 3c
 queries = {
     "monitoring_schedule": """
-        SELECT current_date, recommendation, ae_ratio, psi_score
+        SELECT current_date, recommendation, ae_ratio, score_psi
         FROM main.motor_monitoring.monitoring_log
         WHERE model_name = 'motor_frequency_v1'
           AND YEAR(current_date) = 2023

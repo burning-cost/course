@@ -7,7 +7,7 @@ We built a complete model monitoring pipeline for a deployed CatBoost frequency 
 - **PSI** on the predicted score distribution: has the risk distribution changed?
 - **CSI** on each input feature: which features have driven any distribution shift?
 - **A/E ratio** with confidence intervals: is the model calibrated correctly?
-- **Gini drift** with a DeLong significance test: has the model's discriminatory power changed?
+- **Gini drift** with a bootstrap z-test (Algorithm 2, arXiv 2510.04556): has the model's discriminatory power changed?
 
 We assembled these into a `MonitoringReport` with automated traffic lights and a machine-readable JSON summary. We persisted the results to Delta tables with versioning and a 7-year retention policy. We scheduled the notebook as a Databricks job running on the 1st of each month at 06:00 UK time. We set up SQL Alerts for amber and red conditions. We built a recalibration trigger framework that logs factors to a Delta table that the pricing pipeline reads automatically. And we showed how to extract a complete regulatory evidence pack from the monitoring history.
 

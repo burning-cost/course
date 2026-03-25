@@ -70,10 +70,10 @@ If you are running champion-challenger trials, `gini_drift_test()` can compare c
 
 ### Threshold calibration
 
-The PSI thresholds (0.10 amber, 0.20 red) and A/E thresholds ([0.95, 1.05] green) in `MonitoringReport` are defaults based on credit scoring conventions and actuarial practice. They are not calibrated to your specific portfolio.
+The PSI thresholds (0.10 amber, 0.25 red) and A/E thresholds ([0.95, 1.05] green) in `MonitoringReport` are defaults based on credit scoring conventions and actuarial practice. They are not calibrated to your specific portfolio.
 
 A small portfolio (say, 2,000 policies with 80 expected claims per month) will have wide confidence intervals on the A/E ratio. The A/E might reach 1.15 in a bad month due to pure random noise, with the CI comfortably containing 1.0. The default amber threshold would not fire, correctly. But a large portfolio (50,000 policies, 2,000 expected claims per month) with the same A/E of 1.15 has a very narrow CI that definitively excludes 1.0. The default thresholds will fire - also correctly.
 
-The CI-based A/E traffic light handles this automatically. The PSI threshold does not depend on portfolio size in the same way (PSI is a relative measure), so the 0.10/0.20 default is a reasonable starting point regardless of book size. You may want to tighten the A/E thresholds for a large book where even small A/E deviations represent material mis-pricing.
+The `AERatioThresholds` uses point estimate bands (not CI) — but as portfolio size grows, the CI narrows and the point estimate A/E converges to the true ratio, so an A/E of 1.15 on a large book is a real signal regardless of the CI. The PSI threshold does not depend on portfolio size in the same way (PSI is a relative measure), so the 0.10/0.25 default is a reasonable starting point regardless of book size. You may want to tighten the A/E thresholds for a large book where even small A/E deviations represent material mis-pricing.
 
 The right way to calibrate thresholds is to look at historical monitoring runs for your specific book and identify the natural noise level in each metric before any real drift occurred. That gives you a baseline against which to set meaningful alert levels. We did not do this in the module because it requires a live book with a monitoring history - you cannot do it on synthetic data.

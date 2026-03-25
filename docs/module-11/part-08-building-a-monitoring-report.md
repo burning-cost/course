@@ -103,11 +103,32 @@ The `results_` dict uses `band` keys throughout: `green`, `amber`, or `red`. Thr
 
 | Metric | Green | Amber | Red |
 |--------|-------|-------|-----|
-| A/E (CI-based) | CI contains 1.0 | CI excludes 1.0 | CI excludes 1.0 and outside [0.90, 1.10] |
-| Gini drift | p > alpha | (amber) | p < alpha |
+| A/E (point estimate) | [0.95, 1.05] | [0.90, 1.10] | outside [0.80, 1.20] |
+| Gini drift (p-value) | p >= 0.32 | 0.10 <= p < 0.32 | p < 0.10 |
 | CSI (per feature) | < 0.10 | 0.10–0.25 | > 0.25 |
 | PSI (score) | < 0.10 | 0.10–0.25 | > 0.25 |
 
-The A/E band is based on the confidence interval, not just the point estimate. An A/E of 1.08 with a wide CI (portfolio of 500 policies) is green; an A/E of 1.04 with a narrow CI (portfolio of 50,000 policies) is amber. This is the correct behaviour.
+The A/E classification uses the point estimate directly via `AERatioThresholds`. The default thresholds are 0.95/1.05 for green, 0.90/1.10 for amber, and 0.80/1.20 for red. Gini drift thresholds default to alpha=0.32 for amber and alpha=0.10 for red, following the one-sigma monitoring recommendation from arXiv 2510.04556.
+
+To tighten PSI thresholds for a large book, or to use conventional statistical thresholds for a regulatory submission:
+
+```python
+from insurance_monitoring.thresholds import MonitoringThresholds, PSIThresholds, GiniDriftThresholds
+
+# Tighter PSI for a large motor book with monthly monitoring
+thresholds = MonitoringThresholds(
+    psi=PSIThresholds(green_max=0.05, amber_max=0.15),
+)
+
+# Conventional statistical thresholds for a governance submission
+thresholds_formal = MonitoringThresholds(
+    gini_drift=GiniDriftThresholds(amber_p_value=0.10, red_p_value=0.05),
+)
+
+report = MonitoringReport(
+    ...,
+    thresholds=thresholds,
+)
+```
 
 Part 9 walks through how to read and act on the report. Part 10 shows how to write the results to Delta for trend analysis.

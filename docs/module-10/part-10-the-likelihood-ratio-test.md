@@ -50,7 +50,7 @@ print(
 **What you should see:**
 
 - `age_band × vehicle_group` should show `delta_deviance` of several hundred to a few thousand, `lr_p` < 0.001, `recommended = True`
-- `ncd_years × conviction_points` should also be `recommended = True`
+- `ncd_years × has_convictions` should also be `recommended = True`
 - Several other pairs may have low NID scores and fail to reach significance after Bonferroni correction
 
 ```python

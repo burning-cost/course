@@ -66,6 +66,6 @@ for name, coef in sorted(zip(ix_cols, ix_coefs), key=lambda x: abs(x[1]), revers
 
 **What this shows:** For a categorical × categorical interaction (e.g., `age_band × vehicle_group`), the library adds separate binary contrast columns for each non-reference level combination. A 6-level age band × 5-level vehicle group band produces 5 × 4 = 20 interaction columns, each named `_ix_age_band_{level}_X_vehicle_group_{level}`. For a categorical × continuous interaction, the columns are named `_ix_{cat_feature}_{level}_{cont_feature}`.
 
-The feature names in glum are accessible via `enhanced_glm.feature_names_` — this is glum's attribute, not the scikit-learn `feature_names_in_`. Both contain the same column names but the glum attribute is what is reliably populated after fitting.
+The feature names in glum are accessible via `enhanced_glm.feature_names_`. This is glum's own attribute; scikit-learn's `feature_names_in_` is not populated by glum. Use `enhanced_glm.feature_names_` — it is always available after fitting.
 
 For the planted interaction (age band 17-21, vehicle group 41-50), you should see positive interaction coefficients in the region of +0.25 to +0.35, consistent with the planted 0.30 log-unit bump.
