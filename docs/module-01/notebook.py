@@ -373,7 +373,8 @@ print(f"Table now has {spark.table(FULL_TABLE).count():,} rows")
 
 print("Full table history:")
 spark.sql(f"DESCRIBE HISTORY {FULL_TABLE}").select(
-    "version", "timestamp", "operation", "numOutputRows"
+    "version", "timestamp", "operation",
+    F.col("operationMetrics")["numOutputRows"].alias("numOutputRows"),
 ).show(10, truncate=False)
 
 # COMMAND ----------
@@ -760,7 +761,7 @@ except Exception as e:
 # MAGIC |----------|---------|
 # MAGIC | Motor claims Delta table | pricing.motor.claims_exposure |
 # MAGIC | Table partitioned by accident_year | --- |
-# MAGIC | 7-year version history retention (FCA standard) | TBLPROPERTIES |
+# MAGIC | 7-year version history retention (exceeds FCA minimum (SYSC 9.1.1R: 5 years)) | TBLPROPERTIES |
 # MAGIC | Time travel demonstrated | Version 0 vs current |
 # MAGIC | MERGE-based incremental update | Demonstrated |
 # MAGIC | Data quality checks | Run inline, ready to schedule |

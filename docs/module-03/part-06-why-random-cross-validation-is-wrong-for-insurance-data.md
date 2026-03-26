@@ -23,7 +23,7 @@ The `insurance-cv` library generates these splits automatically. Create a new ce
 df_pd = df.to_pandas()
 
 cv = WalkForwardCV(
-    year_col="accident_year",
+    year_col="policy_year",  # accident_year aliased as policy_year in the notebook
     min_train_years=2,
     ibnr_buffer_years=1,
     n_splits=3,
@@ -33,8 +33,8 @@ folds = list(cv.split(df_pd))
 
 # Print the fold structure so you can see exactly what is being trained and validated
 for i, (train_idx, val_idx) in enumerate(folds):
-    train_years = sorted(df_pd.iloc[train_idx]["accident_year"].unique().tolist())
-    val_years   = sorted(df_pd.iloc[val_idx]["accident_year"].unique().tolist())
+    train_years = sorted(df_pd.iloc[train_idx]["policy_year"].unique().tolist())
+    val_years   = sorted(df_pd.iloc[val_idx]["policy_year"].unique().tolist())
     print(f"Fold {i+1}: train years = {train_years}, validate years = {val_years}")
 ```
 

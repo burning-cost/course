@@ -136,7 +136,8 @@ except Exception as e:
     df = generate_motor_portfolio()
     print(f"Generated: {len(df):,} rows")
 
-# Add policy_year alias for insurance-cv
+# Add policy_year alias so insurance-cv can use year_col="policy_year".
+# The underlying data column is accident_year; policy_year is an alias only.
 df = df.with_columns(pl.col("accident_year").alias("policy_year"))
 
 print(f"\nPortfolio summary:")
@@ -399,6 +400,7 @@ mlflow.set_experiment(f"/Users/{spark.sql('SELECT current_user()').collect()[0][
 max_year = df["accident_year"].max()
 df_train_final = df.filter(pl.col("accident_year") < max_year)
 df_test        = df.filter(pl.col("accident_year") == max_year)
+df_test_final  = df_test  # alias used in exercises
 
 X_train_f = df_train_final[FEATURES].to_pandas()
 y_train_f = df_train_final[FREQ_TARGET].to_numpy()

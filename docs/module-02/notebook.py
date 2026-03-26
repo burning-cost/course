@@ -341,6 +341,10 @@ def extract_relativities(glm_result, base_levels: dict) -> pl.DataFrame:
     return pl.concat([pl.DataFrame(base_rows), rels]).sort(["feature", "level"])
 
 
+# Alias for backward compatibility with exercises and tutorial references
+extract_freq_relativities = extract_relativities
+
+
 freq_rels = extract_relativities(
     glm_freq,
     base_levels={"area": "A", "ncd_years": "0", "conviction_flag": "0"},
@@ -812,6 +816,53 @@ print(f"\nExported {len(radar_df)} rows to {output_path}")
 # COMMAND ----------
 
 # MAGIC %md
+
+def compare_to_emblem(
+    python_rels: pl.DataFrame,
+    emblem_path: str,
+    tolerance: float = 0.001,
+) -> pl.DataFrame:
+    """
+    Compare Python GLM relativities to an Emblem CSV export.
+    Returns a comparison DataFrame with a match column.
+    """
+    emblem_rels = pl.read_csv(
+        emblem_path,
+        schema_overrides={"Level": pl.Utf8, "Relativity": pl.Float64},
+    )
+
+    comparison = (
+        python_rels
+        .rename({"feature": "Factor", "level": "Level", "relativity": "Python_Rel"})
+        .join(
+            emblem_rels.rename({"Relativity": "Emblem_Rel"}).select(["Factor", "Level", "Emblem_Rel"]),
+            on=["Factor", "Level"],
+            how="inner",
+        )
+        .with_columns([
+            ((pl.col("Python_Rel") - pl.col("Emblem_Rel")).abs()).alias("abs_diff"),
+            ((pl.col("Python_Rel") / pl.col("Emblem_Rel") - 1).abs()).alias("rel_diff"),
+        ])
+        .with_columns(
+            (pl.col("rel_diff") < tolerance).alias("match")
+        )
+        .sort(["Factor", "Level"])
+    )
+
+    n_matched = comparison["match"].sum()
+    n_total = len(comparison)
+    print(f"Matched: {n_matched}/{n_total} relativities within {tolerance*100:.1f}% tolerance")
+
+    if n_matched < n_total:
+        mismatches = comparison.filter(~pl.col("match"))
+        print("
+Mismatches:")
+        print(mismatches.select(["Factor", "Level", "Python_Rel", "Emblem_Rel", "rel_diff"]))
+
+    return comparison
+
+# COMMAND ----------
+
 # MAGIC ## 11. Log to MLflow
 
 # COMMAND ----------
@@ -905,16 +956,16 @@ spark.createDataFrame(rels_with_meta.to_pandas()) \
     .write.format("delta") \
     .mode("append") \
     .option("mergeSchema", "true") \
-    .saveAsTable("main.pricing.glm_relativities")
+    .saveAsTable(f"{CATALOG}.pricing.glm_relativities")
 
-print(f"Written {len(rels_with_meta)} rows to main.pricing.glm_relativities")
+print(f"Written {len(rels_with_meta)} rows to {CATALOG}.pricing.glm_relativities")
 
 # COMMAND ----------
 
 # Verify: query the table back
-history = spark.sql("""
+history = spark.sql(f"""
     SELECT model_run_date, model_name, feature, level, relativity
-    FROM main.pricing.glm_relativities
+    FROM {CATALOG}.pricing.glm_relativities
     WHERE feature = 'area'
     ORDER BY model_run_date, level
 """)

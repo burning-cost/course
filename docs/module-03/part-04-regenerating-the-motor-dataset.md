@@ -6,7 +6,7 @@ Create a new cell with a markdown header to keep the notebook organised. In Data
 
 ```python
 %md
-## Part 4: Data preparation
+## Part 5: Data preparation
 ```
 
 Now create the next cell and paste in the data loading code:

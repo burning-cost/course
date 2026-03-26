@@ -12,7 +12,7 @@ FEATURES            = CONTINUOUS_FEATURES + CAT_FEATURES
 
 FREQ_TARGET  = "claim_count"
 EXPOSURE_COL = "exposure"
-SEV_TARGET   = "incurred"
+SEV_TARGET   = "avg_severity"
 ```
 
 Run it. There is no output - you are just setting up variable names that the rest of the notebook will use.

@@ -59,7 +59,7 @@ print(f"LR chi-squared: {lr_stat:.2f}, df: {df_diff}, p-value: {p_value:.4f}")
 
 ## Summary
 
-The Python GLM workflow produces output that is numerically consistent with Emblem when given the same data and the same specification. On synthetic data without manual overrides, the relativities match to four decimal places. On real Emblem models, validate any overrides explicitly before declaring a match.
+The Python GLM workflow produces output numerically consistent with Emblem given identical data and factor encodings. On real Emblem models, validate any manual overrides explicitly before declaring a match — round-number relativities in the Emblem export are the telltale sign.
 
 The difference between Emblem and Python is not in the model. It is in the surrounding infrastructure: version control, reproducibility, auditability, and integration with the rest of the modelling stack.
 
