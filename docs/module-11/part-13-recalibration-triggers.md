@@ -116,20 +116,28 @@ Add this block at the end of the monitoring notebook to compute and log the reca
 
 ```python
 def recalibration_recommendation(
-    ae_result,
+    ae_result: dict,
     gini_result,
     monitoring_log_df,
 ) -> dict:
     """
     Determine the monitoring recommendation based on current metrics
     and recent history.
+
+    Parameters
+    ----------
+    ae_result : dict
+        Output of ae_ratio_ci(). Keys: ae, lower, upper, n_claims, n_expected.
+    gini_result : GiniDriftResult
+        Output of gini_drift_test(). Fields: p_value, gini_change.
+    monitoring_log_df : pl.DataFrame or None
+        Recent monitoring history loaded from Delta. None on the first run.
     """
     ae_ci_excludes_1 = (ae_result["lower"] > 1.0) or (ae_result["upper"] < 1.0)
     ae_outside_10pct = (ae_result["ae"] < 0.90) or (ae_result["ae"] > 1.10)
     ae_outside_15pct = (ae_result["ae"] < 0.85) or (ae_result["ae"] > 1.15)
-    gini_significant = (gini_result.p_value < 0.05) and (
-        abs(gini_result.current_gini - gini_result.reference_gini) >= 0.03
-    )
+    # gini_change = current_gini - reference_gini (negative = degradation)
+    gini_significant = (gini_result.p_value < 0.05) and (abs(gini_result.gini_change) >= 0.03)
 
     # Check how many consecutive months the CI has excluded 1.0
     # consecutive_amber counts prior history rows (not the current month).

@@ -29,6 +29,9 @@ gini_cur = gini_coefficient(actual_cur, pred_cur, exposure=exposure_cur)
 
 # gini_drift_test returns a GiniDriftResult dataclass with fields:
 #   reference_gini, current_gini, gini_change, z_statistic, p_value, significant
+#
+# gini_change = current_gini - reference_gini  (negative = degradation)
+# significant = True when p_value < alpha (default alpha=0.32)
 result = gini_drift_test(
     reference_gini=gini_ref,
     current_gini=gini_cur,
@@ -49,7 +52,7 @@ print(f"P-value:          {result.p_value:.4f}")
 print(f"Significant:      {result.significant}")
 ```
 
-The test uses a bootstrap variance estimator (Algorithm 2 from arXiv 2510.04556) on both reference and current periods. The default significance level is alpha=0.32 (the "one-sigma rule" recommended by the paper for monitoring, which catches drift earlier than alpha=0.05 at the cost of more false positives). Use `alpha=0.05` for confirmatory testing.
+The test uses a bootstrap variance estimator (Algorithm 2 from arXiv 2510.04556) on both reference and current periods. The default significance level is `alpha=0.32` (the "one-sigma rule" recommended by the paper for monitoring, which catches drift earlier than `alpha=0.05` at the cost of more false positives). Use `alpha=0.05` for confirmatory testing.
 
 `gini_change` is `current_gini - reference_gini`: a negative value means discrimination has declined. `significant` is True when `p_value < alpha`.
 

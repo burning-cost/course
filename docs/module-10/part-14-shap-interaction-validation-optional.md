@@ -2,7 +2,7 @@
 
 NID tells you what interactions the CANN learned from the GLM's residuals. As a second opinion, you can compute SHAP interaction values from a CatBoost model. When both methods flag the same pair, the evidence is stronger.
 
-This section requires the `shap` extra for `insurance-interactions`. If you did not install it, skip to Part 15.
+This section requires the `[shap]` extra for `insurance-interactions`, which installs `catboost` and `shapiq`. If you did not install it, skip to Part 15.
 
 ```python
 # Check if the shap extra dependencies are available
@@ -68,13 +68,13 @@ if SHAP_AVAILABLE:
     )
 ```
 
-When `shap_model` is passed to `detector.fit()`, the library calls `compute_shap_interactions` internally and merges the scores into `interaction_table()`. If the shapiq computation fails (e.g., the model type is unsupported), a `UserWarning` is emitted and the pipeline continues with NID scores only — it does not raise.
+When `shap_model` is passed to `detector.fit()`, the library calls `compute_shap_interactions` internally (via `shapiq`'s `TreeExplainer`) and merges the scores into `interaction_table()`. If the shapiq computation fails (e.g., the model type is unsupported), a `UserWarning` is emitted and the pipeline continues with NID scores only — it does not raise.
 
-**Interpreting the consensus:** A pair that ranks first by NID and also ranks first by SHAP is very strong evidence of a genuine interaction. A pair that ranks third by NID but fifteenth by SHAP is worth scrutinising: the CANN found something the GBM did not, which could mean the interaction is a CANN training artefact, or that the SHAP calculation is obscuring a real interaction via the independence assumption.
+**Interpreting the consensus:** A pair that ranks first by NID and also ranks first by SHAP is strong evidence of a genuine interaction. A pair that ranks third by NID but fifteenth by SHAP is worth scrutinising: the CANN found something the GBM did not, which could mean the interaction is a CANN training artefact, or that the SHAP calculation is obscuring a real interaction via the independence assumption.
 
 ### Why NID and SHAP can disagree
 
-SHAP interaction values (technically: Shapley interaction indices) answer a different question from NID. SHAP interaction values measure how much the combined perturbation of two features changes the prediction, over and above the sum of individual perturbations. NID measures how much co-participation in the CANN's hidden units two features show.
+SHAP interaction values (technically: Shapley interaction indices computed via `shapiq`) answer a different question from NID. SHAP interaction values measure how much the combined perturbation of two features changes the prediction, over and above the sum of individual perturbations. NID measures how much co-participation in the CANN's hidden units two features show.
 
 The two methods can disagree because:
 

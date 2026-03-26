@@ -55,9 +55,10 @@ print(f"Enhanced GLM parameters:  {len(enhanced_glm.coef_) + 1}")
 print()
 
 # glum stores feature names in feature_names_ (not feature_names_in_)
-coef_names = enhanced_glm.feature_names_
-ix_cols  = [c for c in coef_names if c.startswith("_ix_")]
-ix_coefs = [enhanced_glm.coef_[list(coef_names).index(c)] for c in ix_cols]
+# Convert to list once to avoid repeated conversion inside the comprehension
+coef_name_list = list(enhanced_glm.feature_names_)
+ix_cols  = [c for c in coef_name_list if c.startswith("_ix_")]
+ix_coefs = [enhanced_glm.coef_[coef_name_list.index(c)] for c in ix_cols]
 
 print("Interaction term coefficients:")
 for name, coef in sorted(zip(ix_cols, ix_coefs), key=lambda x: abs(x[1]), reverse=True):

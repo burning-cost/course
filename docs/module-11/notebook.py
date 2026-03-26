@@ -537,8 +537,8 @@ print(f"P-value:          {gini_result.p_value:.4f}")
 print(f"Significant:      {gini_result.significant}")
 print()
 if gini_result.p_value < 0.05:
-    drop = gini_ref - gini_cur
-    if drop > 0.03:
+    # gini_change = current_gini - reference_gini; negative means degradation
+    if gini_result.gini_change < -0.03:
         print("Statistically significant Gini drop >= 0.03. Discrimination has weakened. "
               "Retraining is required.")
     else:

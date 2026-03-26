@@ -8,11 +8,11 @@ This is not a flaw in the training process. It is the nature of supervised learn
 
 Consider what has changed in UK motor in recent years:
 
-**COVID-19 lockdowns (2020-2021).** Miles driven dropped sharply. Claim frequency fell. A model trained pre-COVID would have over-predicted frequency during lockdown - A/E ratio below 1.0. A model trained during COVID would under-predict frequency after restrictions lifted - A/E above 1.0.
+**COVID-19 lockdowns (2020-2021).** Miles driven dropped sharply. Claim frequency fell. A model trained pre-COVID would have over-predicted frequency during lockdown — A/E ratio below 1.0. A model trained during COVID would under-predict frequency after restrictions lifted — A/E above 1.0.
 
 **Whiplash reform (May 2021).** The Civil Liability Act 2018 changed how soft-tissue injury claims are assessed. Small injury claims moved through the new Official Injury Claim portal. The severity distribution for third-party claims shifted discontinuously at the reform date.
 
-**Ogden rate change (August 2019, then July 2024).** The Ogden rate determines how large catastrophic injury lump sums are calculated. When it changed from -0.75% to -0.25% in 2019, catastrophic injury reserves moved across the industry. The July 2024 review moved the rate again, from -0.25% to +0.5%. A frequency/severity model trained before either change had the wrong severity relationship baked in.
+**Ogden rate change (August 2019, then July 2024).** The Ogden rate determines how large catastrophic injury lump sums are calculated. When it changed from -0.75% to -0.25% in 2019, catastrophic injury reserves moved across the industry. The July 2024 review moved it again, from -0.25% to +0.5%. A frequency/severity model trained before either change had the wrong severity relationship baked in.
 
 **Used car price inflation (2021-2022).** Average sum insured for comprehensive policies rose significantly as second-hand car values spiked post-COVID. A vehicle age model trained on pre-2021 data saw a different relationship between age and value.
 
