@@ -11,6 +11,7 @@ from datetime import date
 mlflow.set_experiment("/Users/your-username/pricing-module-04")
 
 with mlflow.start_run(run_name="gbm_shap_relativities_v1") as run:
+    freq_run_id = run.info.run_id  # capture for linking downstream tables
 
     # Log model parameters
     mlflow.log_params(freq_params)

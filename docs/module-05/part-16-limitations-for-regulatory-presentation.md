@@ -22,9 +22,9 @@ Conformal calibration adjusts the width of intervals to achieve coverage, but it
 
 ### Limitation 4: Asymmetric intervals and the CLT aggregation
 
-Individual intervals for Tweedie models are asymmetric: the distance from the point estimate to the upper bound is much larger than the distance to the lower bound (which is clipped at zero for many policies). The CLT-based portfolio range aggregation uses a symmetric normal approximation, which understates individual variance and therefore understates portfolio-level range.
+Individual intervals for Tweedie models are asymmetric: the distance from the point estimate to the upper bound is much larger than the distance to the lower bound (which is clipped at zero for many policies). The CLT-based portfolio range aggregation uses a symmetric normal approximation, which overestimates the portfolio SD: the zero-capped lower bounds are treated as symmetric lower bounds, inflating the estimated portfolio standard deviation.
 
-**Mitigation:** present the independence range as an optimistic lower bound on portfolio uncertainty. For more accurate portfolio ranges, simulate from the Tweedie distribution at the calibrated quantile scale.
+**Mitigation:** present the independence range as an optimistic lower bound on portfolio uncertainty — it is a lower bound on the naive bound, not a true lower bound on portfolio uncertainty. For more accurate portfolio ranges, simulate from the Tweedie distribution at the calibrated quantile scale.
 
 ### Limitation 5: Minimum calibration set size
 

@@ -491,7 +491,7 @@ F         1.950      1.198         2.337
 
 The pure premium relativities for area are larger than the frequency relativities alone, because area has a positive effect in both models. Area F in the true DGP has a frequency effect of `exp(0.70) = 2.01` and a severity effect of `exp(0.21) = 1.23`, giving a true pure premium relativity of `2.01 × 1.23 = 2.47`. Your extracted value should be in the neighbourhood of 2.3-2.6.
 
-**Why this is an approximation:** The correct combination, mSHAP (Lindstrom et al., 2022), accounts for the joint distribution of frequency and severity SHAP values. Multiplying relativities works when frequency and severity are independent given the features. In practice, they usually are not perfectly independent. Module 5 covers mSHAP.
+**Why this is an approximation:** The correct combination, mSHAP (Lindstrom, J., Nielsen, J., and Lindstrom, A. (2022). "mSHAP: SHAP Values for Two-Part Models"), accounts for the joint distribution of frequency and severity SHAP values. Multiplying relativities works when frequency and severity are independent given the features. In practice, they usually are not perfectly independent. Module 5 covers mSHAP.
 
 ---
 
@@ -647,6 +647,6 @@ The most likely explanation for the difference is that the GLM treats NCD as a c
 
 Module 5 covers two topics that extend what you built here:
 
-**mSHAP for pure premium.** The approximation in Exercise 3 (frequency relativity × severity relativity) is incorrect in general. mSHAP (Lindstrom et al., 2022) provides the mathematically correct way to compose two sets of SHAP values into a pure premium relativity. Module 5 implements this properly.
+**mSHAP for pure premium.** The approximation in Exercise 3 (frequency relativity × severity relativity) is incorrect in general. mSHAP (Lindstrom, J., Nielsen, J., and Lindstrom, A. (2022). "mSHAP: SHAP Values for Two-Part Models") provides the mathematically correct way to compose two sets of SHAP values into a pure premium relativity. Module 5 implements this properly.
 
 **Monitoring relativity stability.** Once your relativity pipeline is scheduled as a Databricks Workflow (weekly or monthly), you need to detect when relativities drift materially between runs. Module 5 builds the alerting logic: how to set thresholds, what counts as a material change, and how to trigger a notification when the NCD=5 relativity moves by more than 5% week-on-week.

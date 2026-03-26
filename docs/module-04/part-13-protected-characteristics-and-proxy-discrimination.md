@@ -4,7 +4,7 @@ Before exporting anything, we need to address a regulatory requirement.
 
 The FCA's Consumer Duty and the Equality Act 2010 place constraints on UK personal lines rating factors. Driver age is currently permitted as a motor rating factor where actuarially justified. But the more important question for any GBM is whether features that are not protected characteristics are acting as proxies for protected characteristics.
 
-SHAP gives you a quantitative way to check this. The test is whether a feature's SHAP values correlate with a proxy for a protected characteristic.
+SHAP gives you a quantitative way to check this. The general method is to compute the correlation between one feature's SHAP values and another variable you are concerned about. In a real portfolio, you would check whether a rating factor's SHAP values correlate with a protected characteristic (such as an IMD deprivation score as a proxy for ethnicity, or a telematics speed metric as a proxy for disability). The example below demonstrates the method by checking area SHAP values against a synthetic deprivation proxy — the structure of the check is identical to what you would run against a real protected characteristic.
 
 In a new cell, type this and run it (Shift+Enter):
 

@@ -18,7 +18,7 @@ cp.calibrate(X_cal, y_cal)
 # Regenerate intervals with the full calibration
 intervals_90 = cp.predict_interval(X_test, alpha=0.10)
 intervals_95 = cp.predict_interval(X_test, alpha=0.05)
-intervals_80 = cp.predict_interval(X_test, confidence=0.80)
+intervals_80 = cp.predict_interval(X_test, alpha=0.20)  # 80% interval — used for practical floor below
 
 upper_90 = intervals_90["upper"].to_numpy()
 upper_95 = intervals_95["upper"].to_numpy()

@@ -55,7 +55,7 @@ print(f"  Actual mean pure premium: {y_test.mean():.2f}")
 
 **Why `min_data_in_leaf=50`:** without a minimum leaf size, deep trees can split on cells with only a handful of observations. These splits produce very precise but unreliable predictions for thin-cell risks. Thin-cell risks are exactly where conformal intervals will be widest - we need stable base model predictions in those regions, not wildly varying predictions from overfit splits.
 
-**A note on early stopping:** using the calibration pool for early stopping means the model's iteration count has been influenced by the calibration data. This introduces a very minor dependency. In practice the effect on coverage is negligible. However, if you need strict separation for a regulatory audit, use a separate validation pool (drawn from the training set, not the calibration set) for early stopping and keep the calibration set entirely unseen during model fitting.
+**A note on early stopping:** using the calibration pool for early stopping means the model's iteration count has been influenced by the calibration data. This introduces a very minor dependency. In practice the effect on coverage is negligible. However, if you need strict separation for a regulatory audit, use a separate validation pool drawn from the training set (not the calibration set) for early stopping and keep the calibration set entirely unseen during model fitting. Concretely: take a random 80/20 split of your training observations, use the 20% held-out portion for early stopping, and reserve the calibration set (the most recent 20% of data by accident year) strictly for conformal calibration.
 
 **What you should see:** training output like this, with the Tweedie loss printed every 100 iterations:
 

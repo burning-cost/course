@@ -159,7 +159,7 @@ train_pool = cb.Pool(
     data=X_freq_pd,
     label=y_freq_pd,
     baseline=log_exposure,     # exposure offset — correct approach, no weight=exposure
-    cat_features=["area"],
+    cat_features=["area", "has_convictions"],
 )
 
 freq_params = {
@@ -177,7 +177,9 @@ freq_model = cb.CatBoostRegressor(**freq_params)
 freq_model.fit(train_pool)
 
 # Quick in-sample check: predicted vs actual claim rate
-preds_freq = freq_model.predict(train_pool) * exposure_pd
+# freq_model.predict() with baseline=log(exposure) returns predicted claims (rate x exposure)
+# Do NOT multiply by exposure again — that would double-count it
+preds_freq = freq_model.predict(train_pool)  # already predicted claims
 actual_rate = y_freq_pd.sum() / exposure_pd.sum()
 pred_rate = preds_freq.sum() / exposure_pd.sum()
 print(f"Actual claim rate: {actual_rate:.4f}")
@@ -250,8 +252,8 @@ sr_freq = SHAPRelativities(
     model=freq_model,
     X=X_freq_pd,
     exposure=exposure_pd,
-    categorical_features=["area", "ncd_years", "has_convictions"],
-    continuous_features=["vehicle_group", "driver_age", "log_mileage"],
+    categorical_features=["area", "has_convictions"],
+    continuous_features=["ncd_years", "vehicle_group", "driver_age", "log_mileage"],
     feature_perturbation="tree_path_dependent",
 )
 
@@ -309,16 +311,17 @@ for feature in ["area", "ncd_years", "has_convictions"]:
 
 # COMMAND ----------
 
-print("NCD relativities: GBM vs true DGP")
-print(f"{'NCD years':<12} {'GBM':>8} {'True DGP':>10} {'Ratio':>8}")
-print("-" * 42)
-
-ncd_rels = rels_freq[rels_freq["feature"] == "ncd_years"].set_index("level")["relativity"]
+# ncd_years is treated as a continuous feature in this notebook.
+# The continuous curve (extracted in Step 6) shows the non-linear NCD effect.
+# For a point-in-time comparison to the true DGP, we evaluate the curve at
+# integer NCD values 0-5.
+print("NCD relativities at integer years: GBM continuous curve vs true DGP")
+print(f"{'NCD years':<12} {'True DGP':>10}")
+print("-" * 26)
 for k in range(6):
     true_rel = np.exp(TRUE_FREQ_PARAMS["ncd_years"] * k)
-    gbm_rel = ncd_rels.get(k, np.nan)
-    ratio = gbm_rel / true_rel if not np.isnan(gbm_rel) else np.nan
-    print(f"NCD = {k:<6} {gbm_rel:>8.3f} {true_rel:>10.3f} {ratio:>8.3f}")
+    print(f"NCD = {k:<6} {true_rel:>10.3f}")
+print("(GBM curve comparison follows after curve extraction in Step 6)")
 
 print()
 print("Area relativities: GBM vs true DGP")
@@ -339,6 +342,13 @@ for band in ["A", "B", "C", "D", "E", "F"]:
 # MAGIC ## 6. Continuous feature curves
 
 # COMMAND ----------
+
+# NCD years: treat as continuous (monotonically decreasing), use isotonic regression
+ncd_curve = sr_freq.extract_continuous_curve(
+    feature="ncd_years",
+    n_points=6,
+    smooth_method="isotonic",
+)
 
 # Driver age: U-shaped, use LOESS smoothing
 age_curve = sr_freq.extract_continuous_curve(
@@ -365,6 +375,7 @@ mileage_curve = sr_freq.extract_continuous_curve(
 mileage_curve["mileage"] = np.exp(mileage_curve["feature_value"])
 
 print("Continuous curve shapes:")
+print(f"  ncd_years: {len(ncd_curve)} points, relativity range [{ncd_curve['relativity'].min():.2f}, {ncd_curve['relativity'].max():.2f}]")
 print(f"  driver_age: {len(age_curve)} points, relativity range [{age_curve['relativity'].min():.2f}, {age_curve['relativity'].max():.2f}]")
 print(f"  vehicle_group: {len(vg_curve)} points, relativity range [{vg_curve['relativity'].min():.2f}, {vg_curve['relativity'].max():.2f}]")
 print(f"  log_mileage: {len(mileage_curve)} points, relativity range [{mileage_curve['relativity'].min():.2f}, {mileage_curve['relativity'].max():.2f}]")
@@ -538,7 +549,8 @@ print(f"  Driver age young: exp({TRUE_SEV_PARAMS['driver_age_young']:.2f}) = {np
 df_pd = df.to_pandas()
 
 # Fit a Poisson GLM for comparison
-# Treat area and ncd_years as categorical in the GLM (same as GBM)
+# GLM uses ncd_years as categorical (common practice); GBM uses it as continuous.
+# The comparison illustrates how the two approaches handle NCD differently.
 df_pd["ncd_factor"] = df_pd["ncd_years"].astype(str)
 
 glm_formula = (
@@ -570,7 +582,7 @@ print(f"GLM AIC: {glm.aic:.0f}")
 
 # COMMAND ----------
 
-# GLM NCD relativities
+# GLM NCD relativities (categorical)
 glm_ncd = {}
 for k in range(6):
     if k == 0:
@@ -579,17 +591,24 @@ for k in range(6):
         param_name = f"C(ncd_factor, Treatment('0'))[T.{k}]"
         glm_ncd[k] = np.exp(glm.params.get(param_name, 0.0))
 
-# GBM NCD relativities
-gbm_ncd = rels_freq[rels_freq["feature"] == "ncd_years"].set_index("level")["relativity"]
+# GBM NCD relativities: read from the continuous curve at integer points
+# ncd_curve was extracted in Step 6; interpolate to integer NCD values 0-5
+ncd_curve_interp = dict(zip(
+    ncd_curve["feature_value"].round().astype(int),
+    ncd_curve["relativity"],
+))
+# Normalise to NCD=0 as base
+ncd0_rel = ncd_curve_interp.get(0, 1.0)
 
-print(f"{'NCD':<6} {'GBM':>8} {'GLM':>8} {'True':>8} {'GBM/GLM':>9}")
-print("-" * 44)
+print(f"{'NCD':<6} {'GBM (curve)':>12} {'GLM':>8} {'True':>8} {'GBM/GLM':>9}")
+print("-" * 48)
 for k in range(6):
     true_r = np.exp(TRUE_FREQ_PARAMS["ncd_years"] * k)
-    gbm_r = gbm_ncd.get(k, np.nan)
+    gbm_r_raw = ncd_curve_interp.get(k, np.nan)
+    gbm_r = gbm_r_raw / ncd0_rel if not np.isnan(gbm_r_raw) else np.nan
     glm_r = glm_ncd.get(k, 1.0)
     ratio = gbm_r / glm_r if not np.isnan(gbm_r) else np.nan
-    print(f"{k:<6} {gbm_r:>8.3f} {glm_r:>8.3f} {true_r:>8.3f} {ratio:>9.3f}")
+    print(f"{k:<6} {gbm_r:>12.3f} {glm_r:>8.3f} {true_r:>8.3f} {ratio:>9.3f}")
 
 # COMMAND ----------
 
@@ -684,12 +703,11 @@ def to_radar_format(
 # Map Python names to Radar variable names
 radar_name_map = {
     "area": "AreaBand",
-    "ncd_years": "NCDYears",
     "has_convictions": "ConvictionFlag",
 }
 
-# Categorical frequency relativities
-cat_rels = rels_freq[rels_freq["feature"].isin(["area", "ncd_years", "has_convictions"])]
+# Categorical frequency relativities (ncd_years is continuous — handled via banded curve)
+cat_rels = rels_freq[rels_freq["feature"].isin(["area", "has_convictions"])]
 radar_df = to_radar_format(cat_rels, feature_name_map=radar_name_map)
 
 # Also include age band relativities from the Polars frame (convert for Radar)
@@ -849,9 +867,10 @@ for _, row in rels_freq[rels_freq["feature"] == "area"].iterrows():
     band = row["level"]
     print(f"    Area {band}: {row['relativity']:.3f} [{row['lower_ci']:.3f}, {row['upper_ci']:.3f}]")
 print()
-print("  NCD years (vs NCD=0):")
-for _, row in rels_freq[rels_freq["feature"] == "ncd_years"].iterrows():
-    print(f"    NCD={int(row['level'])}: {row['relativity']:.3f} [{row['lower_ci']:.3f}, {row['upper_ci']:.3f}]")
+print("  NCD years (continuous curve — relativities at integer points):")
+for _, row in ncd_curve.iterrows():
+    ncd_val = int(round(row["feature_value"]))
+    print(f"    NCD={ncd_val}: {row['relativity']:.3f}")
 print()
 print("  Conviction flag:")
 for _, row in rels_freq[rels_freq["feature"] == "has_convictions"].iterrows():

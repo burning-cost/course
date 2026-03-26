@@ -55,7 +55,7 @@ Weighted average of group means, weighted by exposure.
 ```sql
 v_hat = [Σ_i Σ_j w_{ij} × (X_{ij} - X̄_i)²] / Σ_i(T_i - 1)
 ```
-Sum of within-group squared deviations, weighted by exposure, divided by the total number of within-group degrees of freedom. Groups with only one period (T_i = 1) contribute zero to the numerator but would subtract 1 from the denominator — filter these out before computing v_hat.
+Sum of within-group squared deviations, weighted by exposure, divided by the total number of within-group degrees of freedom. The sum runs only over groups with T_i > 1. Groups with a single observation period (T_i = 1) contribute zero to the numerator (no within-group deviation is possible from a single observation) but would subtract 1 from the denominator, incorrectly reducing the effective degrees of freedom. Filter these out before computing v_hat.
 
 **VHM (a_hat) — between-group variance:**
 ```sql
@@ -98,9 +98,11 @@ def buhlmann_straub(
     weight_col : str
         Exposure weight (e.g. "earned_years").
     log_transform : bool
-        If True, apply B-S in log-rate space to avoid the Jensen's inequality
-        bias that arises in multiplicative (log-link) frameworks. Set False for
-        additive models or when working with severity in additive space.
+        If True, apply B-S in log-rate space. This is correct for multiplicative
+        (Poisson/Gamma log-link) frameworks, where relativities are defined in log
+        space. Applying B-S in rate space and then converting introduces a Jensen's
+        inequality bias in the resulting log-relativities. Set False for additive
+        models or when working with severity in additive space.
 
     Returns
     -------
@@ -165,6 +167,8 @@ def buhlmann_straub(
         resid_sq = (grp[y_col].to_numpy() - x_bar) ** 2
         return float((resid_sq * grp[weight_col].to_numpy()).sum())
 
+    # The loop below is sufficient for portfolios with fewer than 500 groups.
+    # For larger portfolios, vectorise by joining on group_col instead.
     epv_groups = group_data_epv[group_col].to_list()
     epv_num = sum(epv_numerator_for_group(g) for g in epv_groups)
     epv_den = float(group_data_epv["T_i"].sum() - len(epv_groups))
@@ -264,9 +268,10 @@ print()
 
 if bs['a_hat_raw'] < 0:
     print(f"DIAGNOSTIC: a_hat before truncation = {bs['a_hat_raw']:.6f}  (negative)")
-    print("  The data cannot distinguish district effects from sampling noise.")
-    print("  All Z = 0; every district gets the portfolio mean.")
-    print("  This is unusual for a 120-district synthetic dataset — check data quality.")
+    print("  A negative a_hat_raw means the between-group variation in the data is dominated")
+    print("  by sampling noise. This can happen with a genuinely homogeneous portfolio")
+    print("  or with too few years of data. When a_hat = 0, no group-specific adjustments")
+    print("  are warranted by the data.")
 else:
     print(f"  a_hat raw (before truncation): {bs['a_hat_raw']:.6f}  (positive — good)")
 

@@ -18,7 +18,7 @@ phi(x_i) = expected_value + SHAP_1(x_i) + SHAP_2(x_i) + ... + SHAP_p(x_i)
 
 The `expected_value` is the average prediction across the training set. Each `SHAP_j(x_i)` is the contribution of feature `j` to the difference between this observation's prediction and the average.
 
-This decomposition satisfies the Shapley efficiency axiom: the contributions sum exactly to the difference between the prediction and the average. Every unit of the log-prediction is accounted for.
+This decomposition satisfies three properties from Lundberg (2017): local accuracy (the SHAP values sum exactly to the difference between the prediction and the average — every unit of the log-prediction is accounted for), missingness (features with zero contribution receive zero SHAP value), and consistency (if a model changes so that a feature has a larger marginal effect, the SHAP value for that feature does not decrease). These three properties uniquely identify the SHAP values for a given model and background distribution.
 
 ### Why this gives multiplicative relativities
 

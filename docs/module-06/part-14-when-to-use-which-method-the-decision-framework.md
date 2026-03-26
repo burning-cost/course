@@ -27,4 +27,6 @@ For most UK personal lines pricing projects, the correct architecture is:
 
 This is not a shortcut. It is the principled decomposition: the main model handles the rating factors the GLM/GBM can identify from large samples; credibility handles the district-level departures that require pooling.
 
-Reserve full Bayesian for cases where Stage 2 is insufficient — multiple crossed groupings, very few groups, or explicit uncertainty quantification requirements.
+**Important:** the Stage 2 district credibility factor is a multiplicative adjustment applied on top of the Stage 1 model's area factor. The district O/E factor multiplies the GLM area factor — it does not replace it. The final district-level rate is: Stage 1 base rate × GLM area factor × credibility-weighted district O/E factor.
+
+Reserve full Bayesian for cases where Stage 2 is insufficient — multiple crossed groupings, very few groups, or where the regulator asks for confidence intervals on individual segment rates.

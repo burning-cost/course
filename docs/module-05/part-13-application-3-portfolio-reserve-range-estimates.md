@@ -23,7 +23,10 @@ portfolio_upper_naive = upper.sum()
 # Assume individual risks are independent. Sum the variances, take the square root.
 # IMPORTANT WARNING (read before presenting to reserving team):
 # - This uses a symmetric normal approximation to individual losses.
-#   Tweedie losses are right-skewed, so this understates individual variance.
+#   Tweedie losses are right-skewed with zero-capped lower bounds, so the
+#   symmetric approximation OVERESTIMATES the portfolio SD: the lower bound is
+#   floored at zero for many policies, but the symmetric formula treats it as
+#   if the lower tail is as wide as the upper tail.
 # - This assumes zero correlation across risks.
 #   Systemic events (weather, economic shocks) violate this assumption.
 # - The independence range is an optimistic lower bound, not a central estimate.
