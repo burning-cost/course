@@ -1,56 +1,84 @@
 ## Part 13: ENBP compliance verification
 
-After solving, always verify ENBP compliance per-policy rather than relying solely on the constraint having been active during the solve. This is a belt-and-braces check that catches implementation errors.
+After solving, always verify ENBP compliance per-policy independently of the constraint. The solver enforces ENBP via multiplier upper bounds, but an independent check is belt-and-braces and is the compliance evidence for the FCA audit trail.
 
 ```python
-# Compute adjusted premium and NB equivalent for each renewal policy
-# Use Polars for the computation, then extract numpy arrays for the check
+import numpy as np
 
-renewal_flag_np = df["renewal_flag"].to_numpy()
+# ENBP check: for every renewal policy, new_premium <= enbp
+new_premiums_arr = result.new_premiums
+enbp_arr         = enbp
+renewal_mask     = renewal_flag.astype(bool)
 
-# factor_adj: the solved multipliers from Part 9
-factor_adj  = result.factor_adjustments
+# Excess: how much each renewal premium exceeds its ENBP
+enbp_excess  = new_premiums_arr[renewal_mask] - enbp_arr[renewal_mask]
+violations   = enbp_excess > 0.01   # 1p tolerance for floating-point rounding
 
-adj_premium = df["current_premium"].to_numpy().copy()
-nb_equiv    = df["current_premium"].to_numpy().copy()
-
-for fname in FACTOR_NAMES:
-    m = factor_adj.get(fname, 1.0)
-    adj_premium = adj_premium * m
-    if fname not in fs.renewal_factor_names:
-        nb_equiv = nb_equiv * m
-
-# Check: for every renewal policy, adjusted_renewal <= NB_equivalent
-# Allow 1p tolerance for floating-point rounding
-violations = (adj_premium[renewal_flag_np] > nb_equiv[renewal_flag_np] + 0.01)
-n_renewals = renewal_flag_np.sum()
+n_renewals   = renewal_mask.sum()
+n_violations = violations.sum()
 
 print("ENBP compliance verification:")
 print(f"  Renewal policies checked: {n_renewals:,}")
-print(f"  ENBP violations:          {violations.sum()}")
+print(f"  ENBP violations:          {n_violations}")
 
-if violations.sum() == 0:
-    print("  RESULT: All renewal premiums are at or below the NB equivalent.")
+if n_violations == 0:
+    print("  RESULT: All renewal premiums are at or below ENBP.")
     print("  ENBP constraint satisfied per-policy.")
 else:
     print("  RESULT: ENBP violations detected.")
-    print("  Do not proceed to sign-off. Investigate the factor classification.")
+    print("  Do not proceed to sign-off. Investigate the enbp array.")
     # Show the worst violations
-    excess = adj_premium[renewal_flag_np] - nb_equiv[renewal_flag_np]
-    top5 = sorted(excess[violations], reverse=True)[:5]
+    excess_at_violations = enbp_excess[violations]
+    top5 = np.sort(excess_at_violations)[::-1][:5]
     print(f"  Top 5 violation amounts (£): {[f'{x:.2f}' for x in top5]}")
+
+print()
+print("ENBP binding summary:")
+binding_count = result.summary_df["enbp_binding"].sum()
+print(f"  Policies at ENBP cap: {binding_count:,} ({binding_count/n_renewals:.1%} of renewals)")
+print(f"  Max excess (should be <= 0): £{enbp_excess.max():.4f}")
 ```
 
 **What you should see:**
 
-```python
+```text
 ENBP compliance verification:
   Renewal policies checked: 3,250
   ENBP violations:          0
-  RESULT: All renewal premiums are at or below the NB equivalent.
+  RESULT: All renewal premiums are at or below ENBP.
   ENBP constraint satisfied per-policy.
+
+ENBP binding summary:
+  Policies at ENBP cap: 412 (12.7% of renewals)
+  Max excess (should be <= 0): £-0.0002
 ```
 
-If you see violations, the most likely cause is that the tenure discount factor was accidentally included in the shared factors (not in `renewal_factor_names`), or that the optimiser found a way to increase the tenure discount that the ENBP constraint did not catch. Do not proceed to sign-off until this check passes.
+If you see violations, the most likely cause is that the `enbp` array passed to the optimiser was not correctly computed. The most common error in production is computing ENBP as the prior year's premium without applying the current year's NB pricing model — resulting in ENBP values that are lower than they should be.
 
-The per-policy ENBP check is the compliance evidence for the FCA. Keep this output in the notebook and export it to a Unity Catalog table alongside the factor adjustments.
+### What "binding" means
+
+`enbp_binding = True` for a policy means its optimal multiplier exactly hits the ENBP upper bound. The optimiser would have liked to charge this customer more (the profit-maximising multiplier without ENBP would be higher), but the regulatory constraint prevents it.
+
+These are the policies where ENBP is most costly in commercial terms. If a large fraction of your renewals are at the ENBP cap, it suggests your renewal tariff is systematically above new business, which is the scenario PS21/11 is designed to prevent. The right remedy is not to loosen ENBP — it is to review why renewals are being priced above new business equivalents.
+
+### Saving the compliance record
+
+```python
+# Save the per-policy ENBP check to a DataFrame for the audit trail
+enbp_compliance = (
+    df
+    .filter(pl.col("renewal_flag"))
+    .with_columns([
+        pl.Series("new_premium",   new_premiums_arr[renewal_mask].tolist()),
+        pl.Series("enbp",          enbp_arr[renewal_mask].tolist()),
+        pl.Series("enbp_excess",   enbp_excess.tolist()),
+        pl.Series("compliant",     (enbp_excess <= 0.01).tolist()),
+    ])
+    .select(["policy_id", "new_premium", "enbp", "enbp_excess", "compliant"])
+)
+
+print(f"ENBP compliance record: {len(enbp_compliance):,} renewal policies")
+print(f"All compliant: {enbp_compliance['compliant'].all()}")
+```
+
+Write this DataFrame to Unity Catalog alongside the factor adjustments (Part 15). This is the per-policy compliance evidence the FCA expects under PS21/11.

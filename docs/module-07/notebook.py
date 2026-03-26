@@ -5,26 +5,26 @@
 # MAGIC **Modern Insurance Pricing with Python and Databricks**
 # MAGIC
 # MAGIC Replace the Excel scenario with a formally stated optimisation problem.
-# MAGIC The `rate-optimiser` library solves SLSQP with nonlinear constraints encoding
-# MAGIC the LR target, volume floor, per-factor movement caps, and FCA ENBP requirement.
+# MAGIC The `insurance-optimise` library solves SLSQP with nonlinear constraints encoding
+# MAGIC the LR target, volume retention floor, per-policy rate change cap, and FCA ENBP requirement.
 # MAGIC
 # MAGIC **What this notebook does:**
-# MAGIC 1. Generates a synthetic UK motor renewal book with demand model
-# MAGIC 2. Wraps data in PolicyData and FactorStructure
-# MAGIC 3. Declares and checks four constraints (LR, volume, ENBP, factor bounds)
-# MAGIC 4. Solves for the optimal factor adjustments
-# MAGIC 5. Traces the efficient frontier across a range of LR targets
-# MAGIC 6. Extracts shadow prices to identify the binding constraint
-# MAGIC 7. Produces updated factor tables for implementation
+# MAGIC 1. Generates a synthetic UK motor renewal book with per-policy demand model
+# MAGIC 2. Declares and checks constraints (LR, retention, ENBP, rate change bounds)
+# MAGIC 3. Solves for optimal per-policy price multipliers
+# MAGIC 4. Inspects shadow prices to identify the binding constraint
+# MAGIC 5. Traces the efficient frontier across a range of retention targets
+# MAGIC 6. Verifies ENBP compliance per-policy
+# MAGIC 7. Extends to the stochastic chance-constraint formulation
 # MAGIC 8. Writes results to Unity Catalog Delta tables
 # MAGIC
-# MAGIC **Runtime:** 10-15 minutes (optimisation converges in < 60 seconds).
+# MAGIC **Runtime:** 5-10 minutes on a single-node cluster.
 # MAGIC
-# MAGIC **Prerequisites:** rate-optimiser library installed. No prior module required.
+# MAGIC **Prerequisites:** `insurance-optimise` library installed. No prior module required.
 
 # COMMAND ----------
 
-%pip install rate-optimiser polars --quiet
+%pip install insurance-optimise polars --quiet
 
 # COMMAND ----------
 
@@ -36,20 +36,19 @@ import json
 from datetime import date
 
 import numpy as np
-import pandas as pd
 import polars as pl
-from scipy.special import expit
 import matplotlib.pyplot as plt
 
-from rate_optimiser import (
-    PolicyData, FactorStructure, DemandModel,
-    RateChangeOptimiser, EfficientFrontier,
-    LossRatioConstraint, VolumeConstraint,
-    ENBPConstraint, FactorBoundsConstraint,
+from insurance_optimise import (
+    PortfolioOptimiser,
+    ConstraintConfig,
+    EfficientFrontier,
+    ClaimsVarianceModel,
 )
-from rate_optimiser.demand import make_logistic_demand, LogisticDemandParams
 
 print(f"Today: {date.today()}")
+import insurance_optimise
+print(f"insurance-optimise: {insurance_optimise.__version__}")
 
 # COMMAND ----------
 
@@ -61,442 +60,629 @@ print(f"Today: {date.today()}")
 # MAGIC df = spark.table("pricing.motor.renewal_portfolio").toPandas()
 # MAGIC ```
 # MAGIC
-# MAGIC The data must contain:
-# MAGIC - policy_id, channel, renewal_flag: identifiers
-# MAGIC - technical_premium: your GLM or GBM output (claims proxy)
-# MAGIC - current_premium: what you are currently charging
-# MAGIC - market_premium: competitive price (from PCW monitoring or proxy)
-# MAGIC - renewal_prob: current renewal probability from your demand model
-# MAGIC - f_<factor>: one column per rating factor, containing the current relativity value
+# MAGIC The data must contain per-policy:
+# MAGIC - `technical_price`: GLM or GBM output (expected cost + expense loading)
+# MAGIC - `expected_loss_cost`: expected claims component of technical price
+# MAGIC - `p_demand`: renewal probability at current rates (from your demand model)
+# MAGIC - `elasticity`: price elasticity (d log x / d log p), negative
+# MAGIC - `renewal_flag`: True if this is a renewal policy (ENBP applies)
+# MAGIC - `enbp`: equivalent new business price per PS21/11 (renewals only)
 # MAGIC
 # MAGIC The book in this tutorial is running at ~75% LR against a 72% target.
-# MAGIC Most real-world exercises start with a book that needs rate.
 
 # COMMAND ----------
 
 rng = np.random.default_rng(2026)
 N   = 5_000
 
-# Factor relativities: what the current tariff produces for each policy
+# ---------- Risk segments ----------
+# Draw four rating factors for each policy.
+# These determine the technical price.
 age_rel     = rng.choice([0.80, 1.00, 1.20, 1.50, 2.00], N, p=[0.15, 0.30, 0.30, 0.15, 0.10])
 ncb_rel     = rng.choice([0.70, 0.80, 0.90, 1.00],       N, p=[0.30, 0.30, 0.25, 0.15])
 vehicle_rel = rng.choice([0.90, 1.00, 1.10, 1.30],       N, p=[0.25, 0.35, 0.25, 0.15])
 region_rel  = rng.choice([0.85, 1.00, 1.10, 1.20],       N, p=[0.20, 0.40, 0.25, 0.15])
 tenure      = rng.integers(0, 10, N).astype(float)
-tenure_disc = np.ones(N)  # currently neutral (no tenure discount applied)
 
-base_rate         = 350.0
-technical_premium = (
+# ---------- Premiums ----------
+base_rate = 350.0
+
+# Technical price: expected cost + expense loading.
+# The expense loading here is 25% of the risk cost, giving a technical LR of 0.80.
+expected_loss_cost = (
     base_rate
     * age_rel * ncb_rel * vehicle_rel * region_rel
     * rng.uniform(0.97, 1.03, N)
 )
+# Technical price = cost / 0.80 (20% expense + profit loading built in)
+technical_price = expected_loss_cost / 0.80
 
-# Current premium: book running at ~75% LR (underpriced)
-current_premium = technical_premium / 0.75 * rng.uniform(0.96, 1.04, N)
+# Current premiums: book running at ~75% LR (underpriced vs target of 72%)
+# Current premium = cost / 0.75 approximately, with spread
+current_premium = expected_loss_cost / 0.75 * rng.uniform(0.96, 1.04, N)
 
-# Market premium: competitive market slightly below current rates
-market_premium = technical_premium / 0.73 * rng.uniform(0.90, 1.10, N)
-
+# ---------- Demand model ----------
+# Per-policy elasticity: PCW customers are more price-sensitive than direct.
+# These are the inputs to the optimiser's log-linear demand model.
 renewal_flag = rng.random(N) < 0.60
 channel = np.where(
     renewal_flag,
     rng.choice(["PCW", "direct"], N, p=[0.70, 0.30]),
     rng.choice(["PCW", "direct"], N, p=[0.60, 0.40]),
 )
+# PCW elasticity -2.0, direct -1.2 (direct customers less price-sensitive)
+elasticity = np.where(channel == "PCW", -2.0, -1.2)
+# Tenure stickiness: longer-tenured customers are slightly less elastic
+elasticity = elasticity + 0.03 * tenure
+elasticity = np.clip(elasticity, -3.5, -0.5)
 
-# Demand model: logistic with price semi-elasticity = -2.0
-# This is typical for a UK PCW-heavy motor book
-price_ratio = current_premium / market_premium
-logit_p     = 1.0 + (-2.0) * np.log(price_ratio) + 0.05 * tenure
-renewal_prob = expit(logit_p)
+# Baseline renewal probability at current premium (multiplier = 1.0)
+# Logistic: p(renew) = sigmoid(intercept + price_coef * log(price_ratio))
+# Here price_ratio = current_premium / market_premium.
+# Use p_demand = 0.80 base with tenure lift.
+market_premium = expected_loss_cost / 0.73 * rng.uniform(0.90, 1.10, N)
+log_price_ratio = np.log(current_premium / market_premium)
+logit_p = 1.2 + (-2.0) * log_price_ratio + 0.05 * tenure
+p_demand = 1.0 / (1.0 + np.exp(-logit_p))
+p_demand = np.clip(p_demand, 0.05, 0.95)
 
-# Note: This synthetic data generation uses pd.DataFrame because the rate-optimiser
-# library expects pandas input at the policy boundary. In production, load from Delta
-# and call .toPandas() at that same boundary. Polars is used for factor table updates
-# (see cell 7 below) where pandas is not needed.
-df = pd.DataFrame({
-    "policy_id":         [f"MTR{i:06d}" for i in range(N)],
-    "channel":           channel,
-    "renewal_flag":      renewal_flag,
-    "technical_premium": technical_premium,
-    "current_premium":   current_premium,
-    "market_premium":    market_premium,
-    "renewal_prob":      renewal_prob,
-    "tenure":            tenure,
-    "f_age":             age_rel,
-    "f_ncb":             ncb_rel,
-    "f_vehicle":         vehicle_rel,
-    "f_region":          region_rel,
-    "f_tenure_discount": tenure_disc,
-})
+# ---------- ENBP (FCA PS21/11) ----------
+# Renewal premium must not exceed the equivalent new business price.
+# ENBP is the price a new customer with the same risk profile would be quoted.
+# For renewals, ENBP is set just above current premium (slight NB discount baked in).
+# For new business, ENBP is unused.
+enbp = np.where(renewal_flag, current_premium * rng.uniform(0.98, 1.05, N), 0.0)
+
+# ---------- Prior multiplier (year-on-year rate change tracking) ----------
+# Assume all policies have multiplier = 1.0 in prior year (current rates = technical rates)
+prior_multiplier = np.ones(N)
 
 print(f"Portfolio: {N:,} policies")
-print(f"Renewals:  {df['renewal_flag'].sum():,} ({df['renewal_flag'].mean():.1%})")
-print(f"Channels:  {df.groupby('channel')['policy_id'].count().to_dict()}")
-print(f"Current LR: {df['technical_premium'].sum() / df['current_premium'].sum():.3f}")
-print(f"Mean renewal prob: {df['renewal_prob'].mean():.3f}")
+print(f"Renewals:  {renewal_flag.sum():,} ({renewal_flag.mean():.1%})")
+print(f"PCW:       {(channel == 'PCW').sum():,}")
+print(f"Direct:    {(channel == 'direct').sum():,}")
+print()
+print(f"Current LR (cost/premium):  {expected_loss_cost.sum() / current_premium.sum():.4f}")
+print(f"Mean renewal probability:   {p_demand[renewal_flag].mean():.3f}")
+print(f"Mean elasticity:            {elasticity.mean():.2f}")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 2. Wrap data and declare factor structure
+# MAGIC ## 2. Build a Polars DataFrame for analysis
 # MAGIC
-# MAGIC `PolicyData` validates the input and computes derived statistics.
-# MAGIC `FactorStructure` declares which factors are renewal-only.
-# MAGIC
-# MAGIC The `renewal_factor_names` parameter is critical for ENBP compliance.
-# MAGIC Tenure discounts, NCB-at-renewal adjustments, and any other factors that
-# MAGIC new business does not receive must be listed here. If in doubt, include it.
-# MAGIC A false positive (treating an NB factor as renewal-only) is conservative.
-# MAGIC A false negative means the ENBP constraint computes the wrong NB equivalent.
+# MAGIC The optimiser works on numpy arrays directly. We also keep a Polars DataFrame
+# MAGIC for all premium impact analysis, output tables, and Unity Catalog writes.
 
 # COMMAND ----------
 
-data = PolicyData(df)
-print(f"PolicyData loaded:")
-print(f"  n_policies: {data.n_policies}")
-print(f"  n_renewals: {data.n_renewals}")
-print(f"  channels:   {data.channels}")
-print(f"  Current LR: {data.current_loss_ratio():.4f}")
+df = pl.DataFrame({
+    "policy_id":          [f"MTR{i:06d}" for i in range(N)],
+    "channel":            channel.tolist(),
+    "renewal_flag":       renewal_flag.tolist(),
+    "tenure":             tenure.tolist(),
+    "technical_price":    technical_price.tolist(),
+    "expected_loss_cost": expected_loss_cost.tolist(),
+    "current_premium":    current_premium.tolist(),
+    "market_premium":     market_premium.tolist(),
+    "p_demand":           p_demand.tolist(),
+    "elasticity":         elasticity.tolist(),
+    "enbp":               enbp.tolist(),
+})
 
-FACTOR_NAMES = ["f_age", "f_ncb", "f_vehicle", "f_region", "f_tenure_discount"]
-
-fs = FactorStructure(
-    factor_names=FACTOR_NAMES,
-    factor_values=df[FACTOR_NAMES],
-    renewal_factor_names=["f_tenure_discount"],  # only renewals get tenure discount
-)
-
-print(f"\nFactorStructure:")
-print(f"  n_factors:          {fs.n_factors}")
-print(f"  renewal-only:       {fs.renewal_factor_names}")
-print(f"  ENBP-relevant:      these factors are excluded from NB equivalent calculation")
+print(df.head(5))
+print(f"\nShape: {df.shape}")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 3. Define the demand model
-# MAGIC
-# MAGIC The demand model translates price ratio -> renewal probability.
-# MAGIC The key parameter is the price semi-elasticity (-2.0 here):
-# MAGIC a 1% price increase above market reduces renewal probability by ~2pp.
-# MAGIC
-# MAGIC UK motor PCW elasticity: typically -1.5 to -3.0.
-# MAGIC Direct channel: less elastic (-0.5 to -1.5), because direct customers are
-# MAGIC less price-sensitive than PCW customers who are comparing quotes.
-# MAGIC
-# MAGIC Validate your demand model against observed lapse rates before running
-# MAGIC the optimiser. A miscalibrated elasticity produces rate strategies that
-# MAGIC look good in the model and fail in market.
-
-# COMMAND ----------
-
-params = LogisticDemandParams(
-    intercept=1.0,
-    price_coef=-2.0,   # log-price semi-elasticity
-    tenure_coef=0.05,  # tenure effect: longer-tenured customers are stickier
-)
-demand = make_logistic_demand(params)
-
-# Check the implied elasticity at market price (price_ratio = 1.0)
-test_ratios = np.ones(100)
-elasticities = demand.elasticity_at(test_ratios)
-print(f"Price elasticity at market price: {elasticities.mean():.2f}")
-print("(Expected: -1.5 to -2.5 for PCW-heavy UK motor)")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## 4. Build the optimisation problem and check feasibility
-# MAGIC
-# MAGIC Before solving, check whether all constraints can be satisfied.
-# MAGIC If the LR constraint is violated at current rates, the solver needs to find
-# MAGIC factor adjustments that bring LR below the target.
+# MAGIC ## 3. Configure constraints and build the optimiser
 # MAGIC
 # MAGIC The four constraints:
-# MAGIC 1. LR bound: expected LR at new rates must be below target
-# MAGIC 2. Volume bound: retention must not fall below floor
-# MAGIC 3. ENBP: renewal premiums must not exceed NB equivalent (FCA PS21/5)
-# MAGIC 4. Factor bounds: each factor adjustment must stay within approved caps
+# MAGIC 1. **LR bound**: aggregate expected LR at new rates must be below target
+# MAGIC 2. **Retention floor**: expected renewal retention must not fall below floor
+# MAGIC 3. **ENBP**: renewal premiums must not exceed new business equivalent (FCA PS21/11)
+# MAGIC 4. **Rate change cap**: per-policy year-on-year rate change capped at ±20%
 # MAGIC
-# MAGIC The objective function minimises sum of squared deviations from 1.0
-# MAGIC (minimum dislocation: we want the smallest rate change that achieves the target).
+# MAGIC All constraints go into a single `ConstraintConfig` dataclass.
+# MAGIC ENBP and rate change bounds are encoded as per-policy multiplier bounds (box constraints),
+# MAGIC which SLSQP handles separately from the inequality constraints.
 
 # COMMAND ----------
 
-LR_TARGET    = 0.72   # target loss ratio
-VOLUME_FLOOR = 0.97   # retain at least 97% of expected volume
-FACTOR_LOWER = 0.90   # minimum factor adjustment (10% reduction)
-FACTOR_UPPER = 1.15   # maximum factor adjustment (15% increase)
+LR_TARGET      = 0.72   # target loss ratio
+RETENTION_FLOOR = 0.85  # retain at least 85% of renewal customers by count
+MAX_RATE_CHANGE = 0.20  # allow at most ±20% year-on-year rate movement
 
-opt = RateChangeOptimiser(data=data, demand=demand, factor_structure=fs)
-
-opt.add_constraint(LossRatioConstraint(bound=LR_TARGET))
-opt.add_constraint(VolumeConstraint(bound=VOLUME_FLOOR))
-opt.add_constraint(ENBPConstraint(channels=["PCW", "direct"]))
-opt.add_constraint(FactorBoundsConstraint(lower=FACTOR_LOWER, upper=FACTOR_UPPER, n_factors=fs.n_factors))
+config = ConstraintConfig(
+    lr_max=LR_TARGET,
+    retention_min=RETENTION_FLOOR,
+    max_rate_change=MAX_RATE_CHANGE,
+    enbp_buffer=0.0,      # tight to ENBP (no safety margin)
+    technical_floor=True, # prices must be at or above cost
+)
 
 print("Constraint configuration:")
-print(f"  LR target:      {LR_TARGET:.2%}")
-print(f"  Volume floor:   {VOLUME_FLOOR:.2%}")
-print(f"  Factor bounds:  [{FACTOR_LOWER:.2%}, {FACTOR_UPPER:.2%}]")
-print(f"  ENBP channels:  PCW, direct")
+print(f"  LR target:       {LR_TARGET:.2%}")
+print(f"  Retention floor: {RETENTION_FLOOR:.2%}")
+print(f"  Rate change cap: ±{MAX_RATE_CHANGE:.0%}")
+print(f"  ENBP:            active for {renewal_flag.sum():,} renewal policies")
+print(f"  Technical floor: prices must be >= technical_price")
+
+# COMMAND ----------
+
+# Build the optimiser
+opt = PortfolioOptimiser(
+    technical_price=technical_price,
+    expected_loss_cost=expected_loss_cost,
+    p_demand=p_demand,
+    elasticity=elasticity,
+    renewal_flag=renewal_flag,
+    enbp=enbp,
+    prior_multiplier=prior_multiplier,
+    constraints=config,
+    demand_model="log_linear",  # constant elasticity model
+    solver="slsqp",
+    n_restarts=1,
+    seed=42,
+)
+
+print(f"Optimiser built: {N:,} policies, {opt.n_constraints} portfolio constraints")
 print()
-print("Feasibility at current rates (m = 1.0 for all factors):")
-print(opt.feasibility_report())
+# Check baseline metrics (at multiplier = 1.0)
+baseline = opt.portfolio_summary(m=np.ones(N))
+print("Baseline metrics (at current rates, m=1.0 for all policies):")
+print(f"  Profit:    £{baseline['profit']:,.0f}")
+print(f"  GWP:       £{baseline['gwp']:,.0f}")
+print(f"  Loss ratio: {baseline['loss_ratio']:.4f}  (target: {LR_TARGET:.4f})")
+print(f"  Retention:  {baseline['retention']:.4f}  (floor: {RETENTION_FLOOR:.4f})")
+print()
+print(f"LR gap to close:  {(baseline['loss_ratio'] - LR_TARGET)*100:.1f}pp")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Solve for optimal factor adjustments
+# MAGIC ## 4. Solve for optimal price multipliers
 # MAGIC
-# MAGIC SLSQP (Sequential Least Squares Programming) handles the nonlinear constraints.
-# MAGIC The objective is convex in the adjustments (quadratic), but the constraints
-# MAGIC are nonlinear because renewal probability enters through the logistic demand model.
-# MAGIC SLSQP handles this correctly.
+# MAGIC SLSQP (Sequential Least Squares Programming) from `scipy.optimize` handles the
+# MAGIC nonlinear inequality constraints. The objective is to maximise expected profit —
+# MAGIC sum of (price - cost) * demand across all policies.
 # MAGIC
-# MAGIC Convergence typically requires 30-80 iterations. If convergence fails, check:
-# MAGIC - Is the problem feasible? (Exercise 1 feasibility check)
-# MAGIC - Are the factor bounds tight enough that no solution exists?
-# MAGIC - Is the demand model's elasticity plausible?
+# MAGIC Decision variables are per-policy price **multipliers** m_i = p_i / technical_price_i.
+# MAGIC Operating in multiplier space keeps variables O(1) in magnitude and makes the
+# MAGIC ENBP upper bound directly comparable across policies of different sizes.
+# MAGIC
+# MAGIC Convergence typically requires 50-150 iterations for N=5,000 policies.
 
 # COMMAND ----------
 
-result = opt.solve()
+result = opt.optimise()
 
-print(result.summary())
+print(result)
 print()
-print("Factor adjustments (multiplicative; apply to all levels of each factor):")
-for factor, m in result.factor_adjustments.items():
-    direction = "up" if m > 1.0 else ("down" if m < 1.0 else "unchanged")
-    print(f"  {factor:<25}: {m:.4f} ({(m-1)*100:+.1f}% - {direction})")
+print(f"Converged:          {result.converged}")
+print(f"Solver message:     {result.solver_message}")
+print(f"Iterations:         {result.n_iter}")
+print()
+print(f"Expected profit:    £{result.expected_profit:,.0f}")
+print(f"Expected GWP:       £{result.expected_gwp:,.0f}")
+print(f"Expected LR:        {result.expected_loss_ratio:.4f}  (target: {LR_TARGET:.4f})")
+print(f"Expected retention: {result.expected_retention:.4f}  (floor: {RETENTION_FLOOR:.4f})")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Trace the efficient frontier
+# MAGIC ## 5. Inspect the solution
 # MAGIC
-# MAGIC A single solve gives you one point. The frontier gives you the full trade-off
-# MAGIC between loss ratio improvement and volume retention.
-# MAGIC
-# MAGIC The shadow price on the LR constraint is the most important output for the
-# MAGIC pricing committee conversation. It answers: "What does it cost, in dislocation
-# MAGIC terms, to push one more percentage point of LR improvement?"
-# MAGIC
-# MAGIC The knee of the frontier is the natural stopping point: beyond it, the shadow
-# MAGIC price rises faster than the LR improvement you are gaining.
+# MAGIC The result carries the per-policy summary DataFrame. Every policy gets its own
+# MAGIC optimal multiplier. The rate change distribution tells you how much disruption
+# MAGIC this rate action causes at the individual level.
 
 # COMMAND ----------
 
-frontier = EfficientFrontier(opt)
-frontier_df = frontier.trace(lr_range=(0.68, 0.78), n_points=20)
+# Per-policy summary
+summary = result.summary_df
+print("Per-policy result (sample):")
+print(summary.head(10))
+print()
 
-print("Efficient frontier:")
-print(frontier_df.to_string())
+# Distribution of rate changes
+rate_changes = summary["rate_change_pct"].to_numpy()
+print("Distribution of individual rate changes:")
+print(f"  Mean:           {rate_changes.mean():+.1f}%")
+print(f"  Median:         {np.median(rate_changes):+.1f}%")
+print(f"  10th pctile:    {np.percentile(rate_changes, 10):+.1f}%")
+print(f"  90th pctile:    {np.percentile(rate_changes, 90):+.1f}%")
+print(f"  Policies > +10%: {(rate_changes > 10).sum():,} ({(rate_changes > 10).mean():.1%})")
+print(f"  Policies < -10%: {(rate_changes < -10).sum():,} ({(rate_changes < -10).mean():.1%})")
+print()
+
+# ENBP binding: which renewal policies hit the ENBP upper bound
+enbp_binding = summary["enbp_binding"].to_numpy()
+print(f"ENBP constraint binding:  {enbp_binding.sum():,} of {renewal_flag.sum():,} renewal policies")
+print(f"  ({enbp_binding.sum() / renewal_flag.sum():.1%} of renewals are priced at their ENBP cap)")
 
 # COMMAND ----------
 
-print("\nShadow price summary:")
-print(frontier.shadow_price_summary())
+# MAGIC %md
+# MAGIC ## 6. Shadow prices — the binding constraint question
+# MAGIC
+# MAGIC The shadow price (Lagrange multiplier) on a constraint measures the marginal profit
+# MAGIC gain from relaxing that constraint by one unit.
+# MAGIC
+# MAGIC A positive shadow price on `lr_max` means the LR constraint is binding: if you
+# MAGIC raised the LR cap by 0.001 (from 72% to 72.1%), expected profit would improve by
+# MAGIC `shadow_price["lr_max"] * 0.001`.
+# MAGIC
+# MAGIC Zero shadow price means the constraint is not binding at the solution.
+
+# COMMAND ----------
+
+print("Shadow prices at optimal solution:")
+for constraint, sp in result.shadow_prices.items():
+    binding = "BINDING" if abs(sp) > 1e-6 else "not binding"
+    print(f"  {constraint:<20}: {sp:+.4f}  [{binding}]")
+
+print()
+print("Reading the shadow prices:")
+print(f"  A shadow price on lr_max of {result.shadow_prices.get('lr_max', 0):.4f} means:")
+print(f"  - The LR constraint IS {'binding' if abs(result.shadow_prices.get('lr_max', 0)) > 1e-6 else 'NOT binding'}.")
+if abs(result.shadow_prices.get('lr_max', 0)) > 1e-6:
+    sp_lr = result.shadow_prices.get('lr_max', 0)
+    print(f"  - Relaxing the LR cap by 1pp (+0.01) would improve profit by approximately £{sp_lr * 0.01:,.0f}")
+    print(f"  - Tightening the LR cap by 1pp (-0.01) would cost approximately £{sp_lr * 0.01:,.0f} in profit")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 7. Cross-subsidy and consumer impact analysis
+# MAGIC
+# MAGIC Before submitting the rate action for sign-off, characterise the distribution
+# MAGIC of individual premium changes. Consumer Duty (PS22/9) requires you to confirm
+# MAGIC no customer segment is being treated unfairly.
+# MAGIC
+# MAGIC Unlike a uniform factor-table adjustment, per-policy optimisation produces
+# MAGIC heterogeneous rate changes. Some policies see increases, some see decreases —
+# MAGIC the optimiser trades them off to achieve the portfolio-level objectives.
+
+# COMMAND ----------
+
+# Build premium impact DataFrame (Polars)
+df_impact = df.with_columns([
+    pl.Series("new_premium",      result.new_premiums.tolist()),
+    pl.Series("multiplier",       result.multipliers.tolist()),
+    pl.Series("rate_change_pct",  summary["rate_change_pct"].to_list()),
+]).with_columns([
+    (pl.col("new_premium") - pl.col("current_premium")).alias("abs_change_gbp"),
+])
+
+print("Portfolio premium impact:")
+print(f"  Mean change:    {df_impact['rate_change_pct'].mean():+.1f}%")
+print(f"  Median change:  {df_impact['rate_change_pct'].median():+.1f}%")
+mean_abs = df_impact["abs_change_gbp"].mean()
+print(f"  Mean abs change: £{mean_abs:.2f}")
+print()
+
+# Cross-subsidy by age band (how are different risk segments affected?)
+age_analysis = (
+    df_impact
+    .group_by("channel")
+    .agg([
+        pl.len().alias("n_policies"),
+        pl.col("rate_change_pct").mean().alias("mean_pct_change"),
+        pl.col("abs_change_gbp").mean().alias("mean_abs_change_gbp"),
+        pl.col("new_premium").mean().alias("mean_new_premium"),
+    ])
+    .sort("channel")
+)
+print("Premium impact by channel:")
+print(age_analysis)
+print()
+print("Note: different channels may see different rate changes because per-policy elasticities")
+print("differ by channel. The optimiser weights premium increases more heavily on less-elastic")
+print("(direct) customers where the demand response is lower.")
+
+# COMMAND ----------
+
+# Distribution chart
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+
+# Left: rate change distribution
+ax1.hist(
+    result.summary_df["rate_change_pct"].to_numpy(),
+    bins=50, color="steelblue", edgecolor="white", linewidth=0.3,
+)
+ax1.axvline(0, color="black", linestyle="-", linewidth=0.8, alpha=0.5)
+ax1.axvline(rate_changes.mean(), color="firebrick", linestyle="--",
+            label=f"Mean: {rate_changes.mean():+.1f}%")
+ax1.set_xlabel("Individual rate change (%)")
+ax1.set_ylabel("Number of policies")
+ax1.set_title("Distribution of individual rate changes")
+ax1.legend()
+ax1.grid(True, alpha=0.3)
+
+# Right: multiplier distribution
+ax2.hist(
+    result.multipliers,
+    bins=50, color="darkorange", edgecolor="white", linewidth=0.3,
+)
+ax2.axvline(1.0, color="black", linestyle="--", linewidth=1, alpha=0.6, label="m=1.0 (no change)")
+ax2.set_xlabel("Price multiplier (new premium / technical price)")
+ax2.set_ylabel("Number of policies")
+ax2.set_title("Distribution of optimal price multipliers")
+ax2.legend()
+ax2.grid(True, alpha=0.3)
+
+plt.suptitle("Rate Optimisation: Policy-Level Impact", fontsize=13)
+plt.tight_layout()
+plt.show()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 8. ENBP compliance verification
+# MAGIC
+# MAGIC After solving, always run a per-policy ENBP check independently of the constraint.
+# MAGIC The solver enforces ENBP via the multiplier upper bounds, but an independent check
+# MAGIC is the compliance evidence for the FCA audit trail.
+
+# COMMAND ----------
+
+# ENBP check: for every renewal policy, new_premium <= enbp
+new_premiums  = result.new_premiums
+enbp_arr      = enbp
+renewal_mask  = renewal_flag.astype(bool)
+
+enbp_excess = new_premiums[renewal_mask] - enbp_arr[renewal_mask]
+violations  = enbp_excess > 0.01   # 1p tolerance for floating-point
+
+n_renewals    = renewal_mask.sum()
+n_violations  = violations.sum()
+
+print("ENBP compliance verification:")
+print(f"  Renewal policies checked: {n_renewals:,}")
+print(f"  ENBP violations:          {n_violations}")
+
+if n_violations == 0:
+    print("  RESULT: All renewal premiums are at or below ENBP.")
+    print("  ENBP constraint satisfied per-policy.")
+else:
+    print("  RESULT: ENBP violations detected. Do not proceed to sign-off.")
+    top5 = np.sort(enbp_excess[violations])[::-1][:5]
+    print(f"  Top 5 violation amounts (£): {[f'{x:.2f}' for x in top5]}")
+
+print()
+print("ENBP summary:")
+print(f"  Max excess (should be <= 0):    £{enbp_excess.max():.4f}")
+print(f"  Mean excess on binding policies: £{enbp_excess[enbp_excess > -0.01].mean():.4f}")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 9. The efficient frontier
+# MAGIC
+# MAGIC A single solve gives one point. The efficient frontier sweeps the retention
+# MAGIC constraint from loose (low floor, more pricing freedom) to tight (high floor,
+# MAGIC less room to take rate). Each point is an independent solve. The curve shows
+# MAGIC the profit cost of each retention target.
+# MAGIC
+# MAGIC This is the tool for the pricing committee conversation. Instead of asking
+# MAGIC "should we use a 85% or 87% retention floor?", you show them the frontier
+# MAGIC and let them choose the trade-off.
+
+# COMMAND ----------
+
+frontier = EfficientFrontier(
+    optimiser=opt,
+    sweep_param="volume_retention",
+    sweep_range=(0.80, 0.97),
+    n_points=15,
+    n_jobs=1,
+)
+
+frontier_result = frontier.run()
+
+print("Efficient frontier (all points):")
+print(frontier_result.data)
+print()
+
+# Converged points only
+pareto = frontier_result.pareto_data()
+print(f"Converged points: {len(pareto)} of {len(frontier_result.data)}")
 
 # COMMAND ----------
 
 # Plot the frontier
-feasible = frontier.feasible_points()
+pareto_pd = pareto.to_pandas()
 
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
 
-# Left: LR vs volume frontier
+# Left: profit vs retention
 ax1.plot(
-    feasible["expected_lr"] * 100,
-    feasible["expected_volume"] * 100,
+    pareto_pd["retention"] * 100,
+    pareto_pd["profit"] / 1000,
     marker="o", color="steelblue", linewidth=2, markersize=6,
 )
-ax1.axhline(VOLUME_FLOOR * 100, linestyle="--", color="grey", alpha=0.7,
-            label=f"Volume floor ({VOLUME_FLOOR:.0%})")
-ax1.set_xlabel("Expected loss ratio (%)")
-ax1.set_ylabel("Expected volume retention (%)")
-ax1.set_title("Efficient frontier: LR vs volume retention")
-ax1.invert_xaxis()
+ax1.axvline(RETENTION_FLOOR * 100, linestyle="--", color="grey", alpha=0.7,
+            label=f"Retention floor ({RETENTION_FLOOR:.0%})")
+ax1.set_xlabel("Expected retention (%)")
+ax1.set_ylabel("Expected profit (£k)")
+ax1.set_title("Efficient frontier: profit vs retention")
 ax1.legend()
 ax1.grid(True, alpha=0.3)
 
-# Right: shadow price
+# Right: loss ratio vs retention
 ax2.plot(
-    feasible["lr_target"] * 100,
-    feasible["shadow_lr"],
+    pareto_pd["retention"] * 100,
+    pareto_pd["loss_ratio"] * 100,
     marker="o", color="darkorange", linewidth=2, markersize=6,
 )
-ax2.axvline(LR_TARGET * 100, linestyle="--", color="steelblue", alpha=0.7,
-            label=f"Target LR ({LR_TARGET:.0%})")
-ax2.set_xlabel("LR target (%)")
-ax2.set_ylabel("Shadow price (marginal dislocation cost)")
-ax2.set_title("Shadow price on loss ratio constraint")
+ax2.axhline(LR_TARGET * 100, linestyle="--", color="firebrick", alpha=0.7,
+            label=f"LR target ({LR_TARGET:.0%})")
+ax2.set_xlabel("Expected retention (%)")
+ax2.set_ylabel("Expected loss ratio (%)")
+ax2.set_title("Loss ratio across retention targets")
 ax2.legend()
 ax2.grid(True, alpha=0.3)
 
-plt.suptitle("Rate Optimisation: Efficient Frontier", fontsize=13)
+plt.suptitle("Motor renewal book — Q2 2026 rate action frontier", fontsize=13)
 plt.tight_layout()
 plt.show()
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Translate adjustments into updated factor tables
+# MAGIC ## 10. Stochastic extension — chance constraints
 # MAGIC
-# MAGIC The factor adjustment multipliers from the solver apply uniformly to all levels
-# MAGIC of each factor. The shape of the factor table (the relativities between levels)
-# MAGIC does not change. Only the overall scale changes.
+# MAGIC The base optimiser targets an expected LR. A chance constraint asks the stronger
+# MAGIC question: with 90% probability, the portfolio LR must not exceed the target.
 # MAGIC
-# MAGIC This is appropriate for a uniform rate action. If you want to change the shape
-# MAGIC of a factor (e.g., steepen the NCD gradient) that is a separate modelling decision
-# MAGIC that requires regulatory justification and pricing committee sign-off.
+# MAGIC Under the normal approximation (CLT), this reformulates as:
+# MAGIC
+# MAGIC     E[LR] + z_alpha * sigma[LR] <= lr_max
+# MAGIC
+# MAGIC where sigma[LR] is the portfolio LR standard deviation estimated from per-policy
+# MAGIC claims variance. The Chebyshev-based z_alpha = sqrt(alpha / (1 - alpha)) is more
+# MAGIC conservative than the normal z-score and does not require the normal assumption.
+# MAGIC
+# MAGIC Enable this by setting `stochastic_lr=True` in `ConstraintConfig` and passing
+# MAGIC `claims_variance` (from `ClaimsVarianceModel`) to the optimiser.
 
 # COMMAND ----------
 
-# Simulated current factor tables - in production, load from Delta
-current_tables = {
-    "f_age": pl.DataFrame({
-        "band": ["17-21", "22-24", "25-29", "30-39", "40-54", "55-69", "70+"],
-        "current_relativity": [2.00, 1.50, 1.20, 1.00, 0.92, 0.95, 1.10],
-    }),
-    "f_ncb": pl.DataFrame({
-        "ncd_years": [0, 1, 2, 3, 4, 5],
-        "current_relativity": [1.00, 0.90, 0.82, 0.76, 0.72, 0.70],
-    }),
-    "f_vehicle": pl.DataFrame({
-        "group": ["Standard", "Performance", "High-perf", "Prestige"],
-        "current_relativity": [0.90, 1.00, 1.10, 1.30],
-    }),
-    "f_region": pl.DataFrame({
-        "region": ["Rural", "National", "Urban", "London"],
-        "current_relativity": [0.85, 1.00, 1.10, 1.20],
-    }),
-    "f_tenure_discount": pl.DataFrame({
-        "tenure_years": list(range(10)),
-        "current_relativity": [1.00] * 10,
-    }),
-}
-
-factor_adj = result.factor_adjustments
-updated_tables = {}
-
-print("Updated factor tables:")
-for fname, tbl in current_tables.items():
-    m = factor_adj.get(fname, 1.0)
-    updated = tbl.with_columns([
-        (pl.col("current_relativity") * m).alias("new_relativity"),
-        ((pl.col("current_relativity") * m / pl.col("current_relativity") - 1) * 100).alias("pct_change"),
-    ])
-    updated_tables[fname] = updated
-    print(f"\n{fname} (factor adjustment: {m:.4f} = {(m-1)*100:+.1f}%):")
-    print(updated.to_string())
+# Build per-policy claims variance from Tweedie GLM parameters
+# dispersion=1.2, power=1.5 are typical for UK motor (compound Poisson-gamma)
+var_model = ClaimsVarianceModel.from_tweedie(
+    mean_claims=expected_loss_cost,
+    dispersion=1.2,
+    power=1.5,
+)
+print(var_model)
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## 8. Policy-level premium impact analysis
-# MAGIC
-# MAGIC Before submitting the rate action for sign-off, characterise the distribution
-# MAGIC of individual premium changes. Some policies may see larger-than-average increases
-# MAGIC due to compounding factor adjustments.
-# MAGIC
-# MAGIC Consumer Duty requires you to confirm no customer segment is being treated
-# MAGIC unfairly. A distribution that is bimodal, or where a specific demographic
-# MAGIC sees systematically larger increases, needs to be investigated.
+# Stochastic config: same constraints but with the chance-constrained LR
+stoch_config = ConstraintConfig(
+    lr_max=LR_TARGET,
+    retention_min=RETENTION_FLOOR,
+    max_rate_change=MAX_RATE_CHANGE,
+    stochastic_lr=True,
+    stochastic_alpha=0.90,   # P(LR <= target) >= 0.90
+)
+
+stoch_opt = PortfolioOptimiser(
+    technical_price=technical_price,
+    expected_loss_cost=expected_loss_cost,
+    p_demand=p_demand,
+    elasticity=elasticity,
+    renewal_flag=renewal_flag,
+    enbp=enbp,
+    prior_multiplier=prior_multiplier,
+    claims_variance=var_model.variance_claims,
+    constraints=stoch_config,
+    demand_model="log_linear",
+    seed=42,
+)
+
+stoch_result = stoch_opt.optimise()
+print(stoch_result)
+print()
+print(f"Converged:                  {stoch_result.converged}")
+print(f"Expected LR (mean):         {stoch_result.expected_loss_ratio:.4f}")
+print(f"Expected retention:         {stoch_result.expected_retention:.4f}")
+print(f"Expected profit:            £{stoch_result.expected_profit:,.0f}")
 
 # COMMAND ----------
 
-# Compute policy-level combined adjustment
-combined_adj = np.ones(N)
-for fname in FACTOR_NAMES:
-    m = factor_adj.get(fname, 1.0)
-    combined_adj *= m
+# Compare deterministic vs stochastic
+det_mults   = result.multipliers
+stoch_mults = stoch_result.multipliers
 
-new_premium    = df["current_premium"].values * combined_adj
-pct_change_pol = (new_premium / df["current_premium"].values - 1) * 100
+pct_diff = (stoch_mults - det_mults) / det_mults * 100
 
-print(f"Portfolio-level premium impact:")
-print(f"  Mean increase:    {pct_change_pol.mean():.2f}%")
-print(f"  Median increase:  {np.median(pct_change_pol):.2f}%")
-print(f"  10th percentile:  {np.quantile(pct_change_pol, 0.10):.2f}%")
-print(f"  90th percentile:  {np.quantile(pct_change_pol, 0.90):.2f}%")
-print(f"  Policies with > 10% increase: {(pct_change_pol > 10).sum():,} ({(pct_change_pol > 10).mean():.1%})")
-
-# Cross-subsidy analysis: absolute premium changes by age band
-# Under uniform factor adjustment, all policies see the same percentage change.
-# The cross-subsidy concern is about absolute premium levels: young drivers (high age
-# relativities) pay a larger absolute increase because their premiums start higher.
-abs_change = new_premium - df["current_premium"].values
-print("\nAbsolute premium change by age relativity band:")
-age_bands = sorted(df["f_age"].unique())
-print(f"  {'Age rel':>10} {'N':>6} {'Mean abs increase':>18} {'Mean pct change':>16}")
-for band in age_bands:
-    mask = df["f_age"].values == band
-    n_b = mask.sum()
-    mean_abs = abs_change[mask].mean()
-    mean_pct = pct_change_pol[mask].mean()
-    print(f"  {band:>10.2f} {n_b:>6,} {mean_abs:>17.2f}  {mean_pct:>15.2f}%")
-print("Note: percentage change is uniform across age bands (it is a uniform factor action).")
-print("Absolute increase is larger for young drivers (high age relativities) because")
-print("their base premiums are higher. This is the cross-subsidy to highlight in sign-off.")
-
-fig, ax = plt.subplots(figsize=(9, 4))
-ax.hist(pct_change_pol, bins=50, color="steelblue", edgecolor="white", linewidth=0.3)
-ax.axvline(pct_change_pol.mean(), color="firebrick", linestyle="--",
-           label=f"Mean: {pct_change_pol.mean():.1f}%")
-ax.set_xlabel("Individual premium change (%)")
-ax.set_ylabel("Number of policies")
-ax.set_title("Distribution of individual premium changes")
-ax.legend()
-plt.tight_layout()
-plt.show()
+print("Deterministic vs stochastic multiplier comparison:")
+print(f"  Mean multiplier (det):   {det_mults.mean():.4f}")
+print(f"  Mean multiplier (stoch): {stoch_mults.mean():.4f}")
+print()
+print(f"  Mean difference:         {pct_diff.mean():+.2f}%")
+print(f"  Median difference:       {np.median(pct_diff):+.2f}%")
+print()
+print("The stochastic solution requires higher prices (prudence loading) to ensure")
+print("90% probability of meeting the LR target, not just expected value equality.")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Write results to Unity Catalog
+# MAGIC ## 11. Save the audit trail
 # MAGIC
-# MAGIC Write two artefacts:
-# MAGIC 1. The optimal factor adjustments (for the pricing team and the data team)
-# MAGIC 2. The full frontier data (for pricing committee presentation)
+# MAGIC The `audit_trail` on every result is a JSON-serialisable dict that captures
+# MAGIC the full optimisation record: inputs, constraints, solution, convergence info.
+# MAGIC This is required for FCA Consumer Duty regulatory evidence under PS22/9.
+
+# COMMAND ----------
+
+# Save audit trail locally (in production: write to Unity Catalog or ADLS)
+import json
+
+audit_path = f"/tmp/motor_rate_action_{date.today().isoformat()}_audit.json"
+result.save_audit(audit_path)
+print(f"Audit trail saved to: {audit_path}")
+
+# Show the structure (truncated)
+audit = result.audit_trail
+print("\nAudit trail structure:")
+for k, v in audit.items():
+    if isinstance(v, dict):
+        print(f"  {k}: {{...}} ({len(v)} keys)")
+    elif isinstance(v, list) and len(v) > 5:
+        print(f"  {k}: [...] ({len(v)} elements)")
+    else:
+        print(f"  {k}: {v}")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 12. Write results to Unity Catalog
 
 # COMMAND ----------
 
 CATALOG = "pricing"
 SCHEMA  = "motor"
 
-# Factor adjustments table
-adj_records = [
-    {
-        "run_date":         str(date.today()),
-        "factor_name":      fname,
-        "adjustment":       float(factor_adj.get(fname, 1.0)),
-        "pct_change":       float((factor_adj.get(fname, 1.0) - 1) * 100),
-        "lr_target":        LR_TARGET,
-        "volume_floor":     VOLUME_FLOOR,
-        "factor_lower_cap": FACTOR_LOWER,
-        "factor_upper_cap": FACTOR_UPPER,
-    }
-    for fname in FACTOR_NAMES
-]
+# Per-policy optimal premiums
+policy_records = (
+    df
+    .with_columns([
+        pl.Series("optimal_multiplier",   result.multipliers.tolist()),
+        pl.Series("optimal_premium",      result.new_premiums.tolist()),
+        pl.Series("expected_demand",      result.expected_demand.tolist()),
+        pl.Series("rate_change_pct",      result.summary_df["rate_change_pct"].to_list()),
+        pl.Series("enbp_binding",         result.summary_df["enbp_binding"].to_list()),
+        pl.lit(str(date.today())).alias("run_date"),
+        pl.lit(LR_TARGET).alias("lr_target"),
+        pl.lit(RETENTION_FLOOR).alias("retention_floor"),
+    ])
+)
+
+# Frontier data
+frontier_records = frontier_result.data.with_columns(
+    pl.lit(str(date.today())).alias("run_date"),
+)
 
 try:
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
 
     (
-        spark.createDataFrame(adj_records)
+        spark.createDataFrame(policy_records.to_pandas())
         .write.format("delta")
         .mode("overwrite")
         .option("overwriteSchema", "true")
-        .saveAsTable(f"{CATALOG}.{SCHEMA}.rate_action_factors")
+        .saveAsTable(f"{CATALOG}.{SCHEMA}.rate_action_policies")
     )
-    print(f"Factor adjustments written to {CATALOG}.{SCHEMA}.rate_action_factors")
+    print(f"Policy premiums written to {CATALOG}.{SCHEMA}.rate_action_policies")
 
-    # Frontier data
     (
-        spark.createDataFrame(frontier_df)
+        spark.createDataFrame(frontier_records.to_pandas())
         .write.format("delta")
         .mode("overwrite")
         .option("overwriteSchema", "true")
@@ -506,7 +692,7 @@ try:
 
 except Exception as e:
     print(f"Could not write to Unity Catalog: {e}")
-    print("Results available in memory as `adj_records` and `frontier_df`")
+    print("Results available in memory as `policy_records` and `frontier_records`")
 
 # COMMAND ----------
 
@@ -517,19 +703,20 @@ except Exception as e:
 # MAGIC
 # MAGIC | Step | Output |
 # MAGIC |------|--------|
-# MAGIC | PolicyData + FactorStructure | Validated renewal portfolio with 5 factors |
-# MAGIC | Demand model | Logistic elasticity = -2.0, tenure effect = +0.05 |
-# MAGIC | Feasibility check | LR constraint violated at current rates: rate needed |
-# MAGIC | Solve | Optimal factor adjustments at 72% LR target |
-# MAGIC | Efficient frontier | 20 LR targets from 68% to 78%; shadow prices computed |
-# MAGIC | Factor tables | Updated relativities for all 5 factors |
-# MAGIC | Delta tables | rate_action_factors, efficient_frontier |
+# MAGIC | Synthetic portfolio | 5,000 policies with per-policy elasticity, demand, ENBP |
+# MAGIC | ConstraintConfig | LR max 72%, retention floor 85%, rate change cap ±20%, ENBP |
+# MAGIC | PortfolioOptimiser | Profit-maximising SLSQP solve, analytical gradients |
+# MAGIC | OptimisationResult | Per-policy multipliers, premiums, demand, shadow prices |
+# MAGIC | ENBP check | Per-policy compliance verification |
+# MAGIC | EfficientFrontier | 15 retention targets; profit-retention Pareto curve |
+# MAGIC | Stochastic extension | Chance-constrained LR via Branda (2014) + Tweedie variance |
+# MAGIC | Delta tables | rate_action_policies, efficient_frontier |
 # MAGIC
-# MAGIC The shadow price is the key number for the pricing committee.
-# MAGIC At the target LR, it tells you the marginal cost of tightening the target further.
-# MAGIC The knee of the frontier is where that cost exceeds twice its initial value.
+# MAGIC The shadow price on `lr_max` is the key number for the pricing committee.
+# MAGIC It tells you the marginal profit cost of tightening the LR target further.
+# MAGIC The knee of the frontier is where that cost escalates past the expected benefit.
 # MAGIC
-# MAGIC Next: Module 8 - End-to-End Pipeline
+# MAGIC Next: Module 8 — End-to-End Pipeline
 # MAGIC This module ties together Modules 1-7 in a single reproducible Databricks pipeline.
 
 # COMMAND ----------
@@ -538,9 +725,9 @@ print("=" * 60)
 print("MODULE 7 COMPLETE")
 print("=" * 60)
 print()
-print(result.summary())
+print(result)
 print()
-print(f"Efficient frontier: {len(frontier_df)} points traced")
-print(f"Feasible points:    {frontier_df['feasible'].sum()}")
+print(f"Efficient frontier: {len(frontier_result.data)} points traced")
+print(f"Converged points:   {len(frontier_result.pareto_data())}")
 print()
-print("Next: Module 8 - End-to-End Pipeline")
+print("Next: Module 8 — End-to-End Pipeline")

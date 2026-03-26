@@ -1,98 +1,96 @@
 ## Part 7: The four constraints in detail
 
-Now we build the optimiser and add the four constraints. Each constraint is an object you add to the optimiser. Spend time understanding what each one does before moving on.
+Now we build the full constraint configuration and optimiser. Spend time understanding what each constraint does before moving on.
 
 ```python
-from rate_optimiser import (
-    RateChangeOptimiser,
-    LossRatioConstraint, VolumeConstraint,
-    ENBPConstraint, FactorBoundsConstraint,
-)
-from rate_optimiser.demand import make_logistic_demand, LogisticDemandParams
+from insurance_optimise import PortfolioOptimiser, ConstraintConfig
+import numpy as np
 
-# ---- Parameters ----
-LR_TARGET    = 0.72    # close the 3.2pp gap from 75.2% to 72.0%
-VOLUME_FLOOR = 0.97    # accept at most 3% volume loss from rate-driven lapses
-FACTOR_LOWER = 0.90    # no factor can decrease by more than 10%
-FACTOR_UPPER = 1.15    # no factor can increase by more than 15%
+# ---- Constraint parameters ----
+LR_TARGET       = 0.72    # close the 3pp LR gap from 75% to 72%
+RETENTION_FLOOR = 0.85    # accept at most 15% retention loss
+MAX_RATE_CHANGE = 0.20    # ±20% year-on-year rate movement cap
 
-# ---- Demand model ----
-params = LogisticDemandParams(
-    intercept=1.2,
-    price_coef=-2.0,   # log-price semi-elasticity for this book
-    tenure_coef=0.05,  # stickiness per year of tenure
+config = ConstraintConfig(
+    lr_max=LR_TARGET,
+    retention_min=RETENTION_FLOOR,
+    max_rate_change=MAX_RATE_CHANGE,
+    enbp_buffer=0.0,
+    technical_floor=True,
 )
-demand = make_logistic_demand(params)
 
 # ---- Optimiser ----
-opt = RateChangeOptimiser(data=data, demand=demand, factor_structure=fs)
-
-opt.add_constraint(LossRatioConstraint(bound=LR_TARGET))
-opt.add_constraint(VolumeConstraint(bound=VOLUME_FLOOR))
-opt.add_constraint(ENBPConstraint(channels=["PCW", "direct"]))
-opt.add_constraint(FactorBoundsConstraint(
-    lower=FACTOR_LOWER,
-    upper=FACTOR_UPPER,
-    n_factors=fs.n_factors,
-))
+opt = PortfolioOptimiser(
+    technical_price=technical_price,
+    expected_loss_cost=expected_loss_cost,
+    p_demand=p_demand,
+    elasticity=elasticity,
+    renewal_flag=renewal_flag,
+    enbp=enbp,
+    prior_multiplier=np.ones(N),
+    constraints=config,
+    demand_model="log_linear",
+)
 ```
 
-### Constraint 1: LossRatioConstraint
+### Constraint 1: lr_max (loss ratio ceiling)
 
 This says: at the new rates, the expected portfolio loss ratio must be at or below 72%.
 
-The calculation is more subtle than it first appears. The expected LR is:
+The expected LR is:
 
-```python
-E[LR(m)] = sum_i(expected_claims_i) / sum_i(expected_premium_i x renewal_prob_i(m))
+```
+E[LR(m)] = sum_i(expected_loss_cost_i * demand_i(m)) / sum_i(technical_price_i * m_i * demand_i(m))
 ```
 
-The denominator includes `renewal_prob_i(m)` — the probability of policy i renewing at the new rates given the factor adjustment m. If you raise rates substantially, some policies will not renew, and their premium drops out of the denominator. This can move the LR up or down depending on the risk profile of the lapsing policies.
+The denominator includes `demand_i(m)` — the demand probability at the new multiplier. If you raise rates, some customers will not renew, and their premium drops out of the denominator. This changes the LR in ways that depend on whether lapsing customers are better or worse risks than the average.
 
-If the customers most likely to lapse are the better risks (lower technical premium relative to current premium), their departure improves the LR. If the customers most likely to lapse are the worse risks (higher technical premium relative to current premium), their departure worsens the LR. The demand model determines which type is more sensitive to price.
+This is why you cannot compute the new LR by applying rate changes to a static book — you must model the demand response. The optimiser does this automatically.
 
-This is why you cannot ignore the demand model when projecting LR at new rates.
+### Constraint 2: retention_min (volume floor)
 
-### Constraint 2: VolumeConstraint
+This says: the expected fraction of renewal customers who remain at new rates must be at or above 85%.
 
-This says: the expected volume at new rates, measured as retained premium, must be at or above 97% of current volume.
-
-```sql
-E[sum_i(premium_i(m) x renewal_prob_i(m))] >= 0.97 x E[sum_i(premium_i(current) x renewal_prob_i(current))]
+```
+E[retention] = sum_i(demand_i(m) | renewal_i=True) / n_renewals >= 0.85
 ```
 
-The 97% floor is a commercial decision: how much volume are you willing to lose in exchange for LR improvement? Setting a tighter floor (e.g., 99%) gives the optimiser less room to take rate. Setting a looser floor (e.g., 95%) allows more aggressive rate action.
+The 85% floor is a commercial decision: how much volume are you willing to lose in exchange for LR improvement? Setting a tighter floor (e.g., 90%) gives the optimiser less room to take rate. Setting a looser floor (e.g., 80%) allows more aggressive rate action.
 
-The exercises explore the trade-off. A key insight from the efficient frontier (Part 9) is that the relationship between the volume floor and achievable LR is nonlinear: relaxing the floor from 97% to 96% may give you much more LR headroom than relaxing from 96% to 95%.
+The efficient frontier (Part 9) traces the profit-retention trade-off across the full range. You should show the frontier to the pricing committee rather than picking a single threshold number in isolation.
 
-### Constraint 3: ENBPConstraint
+### Constraint 3: ENBP (FCA PS21/11)
 
-This enforces PS 21/5 compliance at the individual policy level. The library evaluates:
+This enforces that every renewal customer's new premium does not exceed the equivalent new business price. It is implemented as per-policy multiplier upper bounds:
 
-```sql
-for every renewal policy i in channels ["PCW", "direct"]:
-    adjusted_renewal_i <= NB_equivalent_i
+```
+m_i <= enbp_i / technical_price_i    for all renewal policies i
 ```
 
-The constraint is satisfied if and only if this holds for every renewal policy. The library implements this as a maximum-excess constraint: `max_i(adjusted_renewal_i - NB_equivalent_i) <= 0`. This is mathematically equivalent to a per-policy constraint but computationally tractable.
+By operating in multiplier space, the bound is dimensionless and consistent across policies of different sizes. The constraint is enforced as a scipy `Bounds` object, which SLSQP handles more efficiently than an inequality constraint.
 
-A note on PS 21/5 in practice: the ENBP calculation requires careful alignment with your actuarial pricing model. Work with your compliance team to confirm which factors are treated as renewal-specific when computing the NB equivalent. The computation must account for introductory discounts that new business customers receive, channel-specific underwriting appetite (some insurers offer different terms to NB on PCW versus direct), and any loyalty adjustments applied to renewals. The `renewal_factor_names` parameter handles the structural part of this, but the commercial layer requires human review.
+The `enbp_buffer` parameter adds a safety margin. With `enbp_buffer=0.01`, the upper bound becomes `enbp_i * 0.99 / technical_price_i` — a 1% cushion below ENBP for floating-point safety.
 
-### Constraint 4: FactorBoundsConstraint
+A note on PS21/11 in practice: the ENBP calculation requires careful alignment with your actuarial pricing model. Work with your compliance team to confirm which factors are treated as renewal-specific when computing the ENBP. The `enbp` array you pass to the optimiser must be computed correctly upstream — the library enforces the constraint exactly as given.
 
-This enforces the underwriting committee's approved movement caps. Setting them to [0.90, 1.15] means:
+### Constraint 4: max_rate_change (per-policy rate cap)
 
-- No factor can decrease by more than 10%
-- No factor can increase by more than 15%
+This enforces the underwriting committee's approved movement cap. With `max_rate_change=0.20`:
 
-These caps serve two purposes. First, they reflect underwriting risk management: an age factor that jumps by 30% in a single cycle creates adverse selection risk and disrupts the book in ways that are difficult to reverse. Second, they create a principled stopping point: if the problem cannot be solved within the caps, you need to either relax a constraint or escalate to the underwriting director for a wider mandate.
+```
+(1 - 0.20) * prior_multiplier_i <= m_i <= (1 + 0.20) * prior_multiplier_i
+```
 
-**When do the caps cause infeasibility?** If you are 5pp above LR target and the factor caps only allow 5% increases, but your demand model predicts that a 5% increase causes a 4% volume loss (pushing you below the volume floor), the problem is infeasible within the caps. The feasibility check in Part 8 reveals this before you waste time on a failed solve.
+This is also implemented as multiplier bounds, not an inequality constraint. The `prior_multiplier` array must be passed to the optimiser — if you omit it, it defaults to 1.0 for all policies (meaning the cap is ±20% from the technical price, not from the prior year's rate).
+
+Setting `prior_multiplier = current_premium / technical_price` gives the cap relative to current market rates, which is the usual convention for year-on-year rate tracking.
+
+**When do the caps cause infeasibility?** If the book needs more rate than the caps allow, the problem is infeasible. The solver will return `result.converged = False`. The remedy is either wider caps (escalate to underwriting director), a looser LR target, or a looser retention floor.
 
 ### Why SLSQP for this problem
 
-SLSQP (Sequential Least Squares Programming) is the solver from `scipy.optimize`. It handles nonlinear inequality constraints (the LR and volume constraints are nonlinear because renewal probability enters through the logistic function) and box constraints (the factor bounds) correctly.
+SLSQP (Sequential Least Squares Programming) is the solver from `scipy.optimize`. It handles nonlinear inequality constraints (the LR and retention constraints are nonlinear because demand enters through the log-linear or logistic function) and box constraints (ENBP and rate change bounds) in a single unified framework.
 
-For this problem size — 5 to 20 factors, 5,000 to 200,000 policies — SLSQP is the right choice. It is efficient for smooth nonlinear problems with a moderate number of variables and constraints. For larger problems with more factors (say, 50+ factor tables), consider `trust-constr` from the same `scipy.optimize` module: it is more robust on problems where the constraint Jacobian is ill-conditioned, at the cost of being slower per iteration.
+For N=5,000 policies with analytical gradients, a single solve takes a few seconds. The library provides analytical gradients for all constraints — without them, SLSQP uses finite differences, which is 2*N extra function evaluations per iteration and prohibitively slow for large portfolios.
 
-For problems with hundreds of decision variables (e.g., per-level optimisation of every cell in every factor table), SLSQP and trust-constr both become slow and you would need a different approach — quadratic programming with a KKT-based solver, or a stochastic gradient method. That is a significantly more complex problem; the uniform-factor optimisation in this module is the appropriate starting point for most pricing reviews.
+For larger problems (N=50,000+), the same solver works — analytical gradients keep the per-iteration cost linear in N. The main bottleneck becomes memory: the Jacobian matrix is O(N) dense at each iteration step.

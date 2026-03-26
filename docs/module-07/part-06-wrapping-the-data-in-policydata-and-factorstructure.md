@@ -1,88 +1,88 @@
-## Part 6: Wrapping the data in PolicyData and FactorStructure
+## Part 6: Configuring the constraints and building the optimiser
 
-The `rate-optimiser` library needs the data in two specific wrapper objects. This step deserves more attention than it usually gets, because getting it wrong silently corrupts the ENBP calculation.
+The `insurance-optimise` library does not wrap data in validator objects — it takes numpy arrays directly. All constraint configuration goes into a single `ConstraintConfig` dataclass, which you then pass to `PortfolioOptimiser`.
 
-### PolicyData
+### ConstraintConfig
 
-`PolicyData` validates the input and exposes summary statistics that are the inputs to every constraint. It requires a pandas DataFrame (the library boundary where we convert from Polars):
+`ConstraintConfig` is a dataclass that declares every active constraint in one place. None of the fields are required — unset fields simply mean unconstrained.
 
 ```python
-from rate_optimiser import PolicyData, FactorStructure
+from insurance_optimise import PortfolioOptimiser, ConstraintConfig
 
-# Convert to pandas at the library boundary
-df_pd = df.to_pandas()
+config = ConstraintConfig(
+    lr_max=0.72,             # aggregate LR must not exceed 72%
+    retention_min=0.85,      # expected renewal retention must be at least 85%
+    max_rate_change=0.20,    # per-policy rate change capped at ±20%
+    enbp_buffer=0.0,         # tight to ENBP (no extra safety margin)
+    technical_floor=True,    # prices must be at or above technical price
+)
 
-data = PolicyData(df_pd)
+print(config)
+```
 
-print(f"n_policies: {data.n_policies:,}")
-print(f"n_renewals: {data.n_renewals:,}")
-print(f"channels:   {data.channels}")
-print(f"Current LR: {data.current_loss_ratio():.4f}")
+The ENBP constraint is not a separate object. It is enforced automatically via per-policy multiplier upper bounds when you pass `enbp` and `renewal_flag` arrays to `PortfolioOptimiser`. The `enbp_buffer` parameter adds a small safety margin below the ENBP: setting `enbp_buffer=0.01` means the renewal premium upper bound is `enbp * 0.99` rather than `enbp` exactly.
+
+### Building the optimiser
+
+```python
+opt = PortfolioOptimiser(
+    technical_price=technical_price,    # shape (N,)
+    expected_loss_cost=expected_loss_cost,  # shape (N,)
+    p_demand=p_demand,                  # shape (N,), values in (0,1)
+    elasticity=elasticity,              # shape (N,), negative
+    renewal_flag=renewal_flag,          # shape (N,), boolean
+    enbp=enbp,                          # shape (N,), positive
+    prior_multiplier=np.ones(N),        # optional: prior year multipliers
+    constraints=config,
+    demand_model="log_linear",
+    solver="slsqp",
+    seed=42,
+)
+
+print(f"Built: {opt.n} policies, {opt.n_constraints} portfolio constraints")
 ```
 
 **What you should see:**
 
 ```bash
-n_policies: 5,000
-n_renewals: 3,250 (approximately)
-channels:   ['PCW', 'direct']
-Current LR: 0.7502
+Built: 5,000 policies, 2 portfolio constraints
 ```
 
-Check the LR against your own calculation: `df["technical_premium"].sum() / df["current_premium"].sum()` should match `data.current_loss_ratio()`. If they do not match, there is a mismatch between what you put in the DataFrame and what the library is using. Do not proceed until they agree.
+The 2 portfolio constraints are LR and retention. ENBP and rate change bounds appear as box constraints on the multipliers (not counted here) — SLSQP handles them separately as bounds, which is more efficient than inequality constraints.
 
-### FactorStructure
+### Checking baseline metrics
 
-`FactorStructure` tells the library which columns are rating factors, and which of those factors apply only to renewals (not new business). This is the most consequential configuration decision in the entire module.
+Before solving, call `portfolio_summary()` to confirm the starting point:
 
 ```python
-FACTOR_NAMES = ["f_age", "f_ncb", "f_vehicle", "f_region", "f_tenure_discount"]
-
-fs = FactorStructure(
-    factor_names=FACTOR_NAMES,
-    factor_values=df_pd[FACTOR_NAMES],
-    renewal_factor_names=["f_tenure_discount"],
-)
-
-print(f"n_factors:            {fs.n_factors}")
-print(f"shared factors:       {[f for f in FACTOR_NAMES if f not in fs.renewal_factor_names]}")
-print(f"renewal-only factors: {fs.renewal_factor_names}")
+baseline = opt.portfolio_summary(m=np.ones(N))
+print(f"Baseline LR:        {baseline['loss_ratio']:.4f}  (target: {config.lr_max:.4f})")
+print(f"Baseline retention: {baseline['retention']:.4f}  (floor: {config.retention_min:.4f})")
+print(f"Baseline profit:    £{baseline['profit']:,.0f}")
+print(f"LR gap to close:    {(baseline['loss_ratio'] - config.lr_max)*100:.1f}pp")
 ```
 
 **What you should see:**
 
-```python
-n_factors:            5
-shared factors:       ['f_age', 'f_ncb', 'f_vehicle', 'f_region']
-renewal_only factors: ['f_tenure_discount']
+```bash
+Baseline LR:        0.7500  (target: 0.7200)
+Baseline retention: 0.7612  (floor: 0.8500)
+Baseline profit:    £1,234,567
+LR gap to close:    3.0pp
 ```
 
-### Why renewal\_factor\_names matters so much
+The LR constraint is violated at current rates — that is expected. The retention constraint is satisfied — at current rates, we have not taken any rate action to trigger lapses. The solver needs to find multipliers that close the 3pp LR gap while keeping retention above 85%.
 
-The ENBP constraint requires: for each renewal policy, the adjusted renewal premium must not exceed what a new customer with the same risk profile would be quoted.
+### Why per-policy multipliers, not factor-table adjustments?
 
-The "same risk profile" for a new customer means the same age, NCB, vehicle, and region — but a new customer does not get the tenure discount, because tenure requires being a customer for some years. The tenure discount is renewal-only.
+The classic approach to rate optimisation solves for a small number of factor-level adjustments (one multiplier per rating factor). `insurance-optimise` instead solves for a multiplier per policy.
 
-So the new business equivalent premium is computed with all factor adjustments except the renewal-only ones:
+The reasons are:
 
-```sql
-NB equivalent premium = current_premium x m_age x m_ncb x m_vehicle x m_region
-Adjusted renewal premium = current_premium x m_age x m_ncb x m_vehicle x m_region x m_tenure_discount
-```
+1. **Richer solutions.** A per-policy solve can differentiate between customers who are at very different points on the demand curve, even within the same factor level. Two 25-year-old drivers in the same NCB and vehicle group may have very different retention probability histories; the per-policy approach can reflect this.
 
-The ENBP constraint requires: `adjusted_renewal_premium <= NB_equivalent_premium`
+2. **Correct ENBP handling.** The ENBP constraint is inherently per-policy (each renewal has its own ENBP from PS21/11). Encoding it as a per-policy multiplier bound is exact; expressing it as a factor-level bound requires approximation.
 
-Which simplifies to: `m_tenure_discount <= 1.0`
+3. **Consistent with modern pricing.** In a GBM/neural-network pricing world, the "factor table" abstraction is less useful — risk is continuous, not bucketed. Per-policy optimisation is the natural complement.
 
-This means the optimiser can never increase the tenure discount factor above 1.0 for renewal customers. The discount can only stay flat or increase. If the optimiser wants to improve LR by reducing tenure discounts (increasing m\_tenure above 1.0), the ENBP constraint blocks it. This is intentional — it is the FCA's requirement.
-
-**What if you get renewal\_factor\_names wrong?**
-
-If you forget to put `f_tenure_discount` in `renewal_factor_names`, the library computes the NB equivalent premium using all five factors, including the tenure discount. The ENBP constraint then compares:
-
-```python
-adjusted_renewal = current_premium x m_age x m_ncb x m_vehicle x m_region x m_tenure
-NB equivalent    = current_premium x m_age x m_ncb x m_vehicle x m_region x m_tenure
-```
-
-Both sides include m\_tenure. The constraint reduces to `1 <= 1`, which is always satisfied. ENBP is trivially satisfied regardless of what the optimiser does with the tenure discount. The solver can set m\_tenure = 1.15 (a 15% reduction in renewal discounts) and the ENBP check will pass — even though in reality, this would be an ENBP breach for every renewal customer receiving a tenure discount. You would have a regulatory breach disguised as compliance. This is why the configuration matters.
+The tradeoff: the solution is harder to communicate to the rating engine (N multipliers rather than K factor adjustments). In practice, you post-process the per-policy multipliers into segment-level adjustments for implementation. See Part 11 for how to do this.

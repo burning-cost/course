@@ -13,7 +13,7 @@ If the cluster is not in the list, it may have auto-terminated. Go to **Compute*
 In the first cell, type this and run it by pressing **Shift+Enter**:
 
 ```python
-%pip install rate-optimiser catboost polars scipy --quiet
+%pip install insurance-optimise polars --quiet
 dbutils.library.restartPython()
 ```
 
@@ -22,7 +22,7 @@ Wait for the installation output to complete, then for the restart message. This
 For a local development environment instead of Databricks:
 
 ```bash
-uv add rate-optimiser catboost polars scipy
+uv add insurance-optimise polars
 ```
 
 ### Confirming the imports work
@@ -32,29 +32,27 @@ In a new cell, paste this and run it:
 ```python
 import numpy as np
 import polars as pl
-import scipy
-from catboost import CatBoostClassifier
-from rate_optimiser import (
-    PolicyData, FactorStructure, RateChangeOptimiser,
-    LossRatioConstraint, VolumeConstraint,
-    ENBPConstraint, FactorBoundsConstraint,
+import insurance_optimise
+from insurance_optimise import (
+    PortfolioOptimiser,
+    ConstraintConfig,
     EfficientFrontier,
+    ClaimsVarianceModel,
 )
-from rate_optimiser.demand import make_logistic_demand, LogisticDemandParams
 
-print(f"NumPy:   {np.__version__}")
-print(f"Polars:  {pl.__version__}")
-print(f"SciPy:   {scipy.__version__}")
-print("rate-optimiser: imported OK")
+print(f"NumPy:             {np.__version__}")
+print(f"Polars:            {pl.__version__}")
+print(f"insurance-optimise: {insurance_optimise.__version__}")
+print("All imports OK")
 ```
 
 **What you should see:**
 
 ```bash
-NumPy:   1.26.x
-Polars:  0.20.x
-SciPy:   1.x.x
-rate-optimiser: imported OK
+NumPy:              1.26.x
+Polars:             0.20.x
+insurance-optimise: 0.x.x
+All imports OK
 ```
 
-If you see `ModuleNotFoundError: No module named 'rate_optimiser'`, the install did not complete. Run the `%pip install` cell again and restart again.
+If you see `ModuleNotFoundError: No module named 'insurance_optimise'`, the install did not complete. Run the `%pip install` cell again and restart again.

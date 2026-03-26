@@ -1,65 +1,96 @@
-## Part 11: Translating adjustments into factor tables
+## Part 11: Working with per-policy multipliers
 
-The factor adjustment multipliers apply uniformly to every level of each factor table. This section shows how to produce the updated tables and what to include in the pricing committee pack.
+The solver returns a multiplier array of shape `(N,)`. Every policy has its own optimal price. This is more expressive than a factor-table approach but requires additional steps to communicate to the rating engine and to the pricing committee.
+
+### Per-policy result DataFrame
+
+The full per-policy output is in `result.summary_df`:
 
 ```python
-# Current factor tables (Polars DataFrames)
-# In production, these come from your rating system's data store
-current_tables = {
-    "f_age": pl.DataFrame({
-        "band":       ["17-21", "22-24", "25-29", "30-39", "40-54", "55-69", "70+"],
-        "relativity": [2.00, 1.50, 1.20, 1.00, 0.92, 0.95, 1.10],
-    }),
-    "f_ncb": pl.DataFrame({
-        "ncd_years":  [0, 1, 2, 3, 4, 5],
-        "relativity": [1.00, 0.90, 0.82, 0.76, 0.72, 0.70],
-    }),
-    "f_vehicle": pl.DataFrame({
-        "group":      ["Standard", "Performance", "High-perf", "Prestige"],
-        "relativity": [0.90, 1.00, 1.10, 1.30],
-    }),
-    "f_region": pl.DataFrame({
-        "region":     ["Rural", "National", "Urban", "London"],
-        "relativity": [0.85, 1.00, 1.10, 1.20],
-    }),
-    "f_tenure_discount": pl.DataFrame({
-        "tenure_years": list(range(10)),
-        "relativity":   [1.00] * 10,
-    }),
-}
+summary = result.summary_df
 
-factor_adj = result.factor_adjustments
+print("Per-policy result (sample):")
+print(summary.head(10))
+print()
 
-# Apply adjustments and produce updated tables (all in Polars)
-updated_tables = {}
-for fname, tbl in current_tables.items():
-    m = factor_adj.get(fname, 1.0)
-    updated = tbl.with_columns([
-        (pl.col("relativity") * m).alias("new_relativity"),
-        ((m - 1) * 100 * pl.lit(1.0)).alias("pct_change"),
-    ]).rename({"relativity": "current_relativity"})
-    updated_tables[fname] = updated
-    print(f"\n{fname}  (adjustment {m:.4f} = {(m-1)*100:+.1f}%):")
-    print(updated)
+# Policies at the ENBP cap
+enbp_at_cap = summary.filter(pl.col("enbp_binding"))
+print(f"Policies at ENBP cap: {len(enbp_at_cap):,} of {renewal_flag.sum():,} renewals")
+
+# Rate change distribution
+print("\nRate change distribution:")
+print(f"  Mean:    {summary['rate_change_pct'].mean():+.1f}%")
+print(f"  Median:  {summary['rate_change_pct'].median():+.1f}%")
+print(f"  p10:     {summary['rate_change_pct'].quantile(0.10):+.1f}%")
+print(f"  p90:     {summary['rate_change_pct'].quantile(0.90):+.1f}%")
 ```
 
-**What you should see for f\_age:**
+Columns in `summary_df`:
+- `policy_idx`: integer index (0 to N-1)
+- `multiplier`: optimal price multiplier (`new_premium / technical_price`)
+- `new_premium`: optimal final premium
+- `expected_demand`: expected demand at the optimal price
+- `contribution`: per-policy profit contribution `(new_premium - expected_loss_cost) * expected_demand`
+- `enbp_binding`: True if this policy's multiplier hits the ENBP upper bound
+- `rate_change_pct`: year-on-year rate change as a percentage
 
-```sql
-f_age  (adjustment 1.0368 = +3.7%):
+### Summarising to segments for implementation
 
-band    current_relativity  new_relativity  pct_change
-17-21                 2.00          2.0736         3.7
-22-24                 1.50          1.5552         3.7
-25-29                 1.20          1.2442         3.7
-30-39                 1.00          1.0368         3.7
-40-54                 0.92          0.9539         3.7
-55-69                 0.95          0.9850         3.7
-70+                   1.10          1.1405         3.7
+The rating engine typically implements rates as factor tables, not per-policy multipliers. To bridge this, group the per-policy multipliers into the segments your rating system knows about and compute the mean multiplier per segment.
+
+```python
+# Build analysis DataFrame with segment columns
+df_with_results = df.with_columns([
+    pl.Series("optimal_multiplier", result.multipliers.tolist()),
+    pl.Series("new_premium", result.new_premiums.tolist()),
+    pl.Series("rate_change_pct", result.summary_df["rate_change_pct"].to_list()),
+])
+
+# Segment-level mean multipliers (for rating engine communication)
+segment_summary = (
+    df_with_results
+    .group_by(["channel"])
+    .agg([
+        pl.len().alias("n_policies"),
+        pl.col("optimal_multiplier").mean().alias("mean_multiplier"),
+        pl.col("rate_change_pct").mean().alias("mean_rate_change_pct"),
+        pl.col("new_premium").mean().alias("mean_new_premium"),
+    ])
+    .sort("channel")
+)
+print("Segment-level summary:")
+print(segment_summary)
 ```
 
-All rows show the same percentage change. This is correct and expected for a uniform factor adjustment: the shape of the table is preserved; only the scale changes.
+The mean multiplier per segment is the number to communicate to the rating engine: "for PCW renewals, apply a 1.045x multiplier to current premiums." This rounds the continuous per-policy solution back to a discrete segment action.
 
-**What this means for customers.** A 19-year-old in the 17-21 band has a current factor of 2.00. After the rate action, it is 2.074. Their premium increases by 3.7%, same as a 45-year-old in the 40-54 band. In absolute terms, the 19-year-old's premium increases by more (because they start from a higher base), but the percentage change is identical across every age band.
+### The "shape" vs "scale" distinction
 
-This is the correct reading of a uniform rate action, and it matters for the cross-subsidy analysis in the next part.
+The per-policy optimisation produces a continuous multiplier surface across the portfolio. When you aggregate to segments, you are choosing to implement the solution approximately. There are two ways to think about this:
+
+**Shape-preserving implementation.** Apply the segment mean multiplier uniformly to all policies in that segment. This preserves the relative ordering of premiums within the segment (same percentage change for all).
+
+**Full per-policy implementation.** Load the policy-level multipliers directly into the rating engine. This is the exact solution but requires the rating engine to support per-policy overrides — most modern systems do. It is more accurate but harder to explain to compliance and the pricing committee.
+
+For the pricing committee, the shape-preserving approach is easier to communicate. For the rating engine, per-policy is more accurate. In practice, most teams implement a hybrid: per-policy multipliers for the top and bottom of the distribution (where the differentiation matters most), and segment averages elsewhere.
+
+### What the pricing committee needs to see
+
+The key outputs for the pricing committee pack:
+
+1. The efficient frontier plot (from Part 10): shows the profit-retention trade-off
+2. The distribution of rate changes: mean, median, 10th–90th percentile, and the number of policies seeing >10% or <-10% change
+3. The ENBP compliance statement: zero violations per-policy
+4. The shadow prices: which constraints are binding and their marginal cost
+5. The convergence flag: `result.converged = True`
+
+Shadow prices are in `result.shadow_prices`. A positive value means the constraint is binding:
+
+```python
+print("Binding constraints:")
+for name, sp in result.shadow_prices.items():
+    binding = "BINDING" if abs(sp) > 1e-6 else "slack"
+    print(f"  {name:<20}: shadow price = {sp:+.4f}  [{binding}]")
+```
+
+The shadow price on `lr_max` has the interpretation: if you relax the LR cap by 0.001 (from 72% to 72.1%), expected profit increases by approximately `shadow_prices['lr_max'] * 0.001`. This is the quantification the pricing committee needs to decide whether a different LR target is worth pursuing.
