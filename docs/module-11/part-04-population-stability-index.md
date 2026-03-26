@@ -28,30 +28,23 @@ If PSI on the scores is high (> 0.25), something has changed the risk distributi
 
 ### Computing predicted scores
 
-First, load the trained model from MLflow. We trained and registered this in Module 8:
-
-```python
-import mlflow.catboost
-
-model = mlflow.catboost.load_model(
-    model_uri=f"models:/{MODEL_NAME}/{MODEL_VERSION}"
-)
-print("Model loaded OK")
-```
-
-Now generate predictions for both windows:
+We use the CatBoost model trained in Stage 2 of this notebook (the in-memory `model` object). The model was trained on the reference period only — predictions on both windows come from that single fitted model.
 
 ```python
 from catboost import Pool
 import numpy as np
 
-feature_names = model.feature_names_
+def make_pool(df, with_label=False):
+    X = df.select(FEATURE_NAMES).to_pandas()
+    if with_label:
+        y = df["claim_count"].to_numpy().astype(float)
+        w = df["exposure"].to_numpy()
+        return Pool(X, label=y, baseline=np.log(np.clip(w, 1e-6, None)),
+                    cat_features=CAT_FEATURES)
+    return Pool(X, cat_features=CAT_FEATURES)
 
-ref_pool = Pool(df_reference.select(feature_names).to_pandas(), cat_features=["area"])
-cur_pool = Pool(df_current.select(feature_names).to_pandas(), cat_features=["area"])
-
-pred_ref = model.predict(ref_pool)
-pred_cur = model.predict(cur_pool)
+pred_ref = model.predict(make_pool(df_reference))
+pred_cur = model.predict(make_pool(df_current))
 
 exposure_ref = df_reference["exposure"].to_numpy()
 exposure_cur = df_current["exposure"].to_numpy()

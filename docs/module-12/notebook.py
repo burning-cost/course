@@ -371,7 +371,6 @@ print(diag.sigma_summary)
 # Trace plots for key global parameters
 # Healthy chains look like "hairy caterpillars": fast mixing, all chains overlapping
 fig = plot_trace(result, params=["alpha", "sigma", "rho"])
-plt.tight_layout()
 plt.savefig("/tmp/bym2_trace.png", dpi=150, bbox_inches="tight")
 plt.show()
 print("Saved to /tmp/bym2_trace.png")
@@ -491,9 +490,15 @@ print("Saved to /tmp/bym2_relativities_bar.png")
 # Grid choropleth: true vs BYM2 vs naive O/E
 # Areas are sorted alphabetically (r0c0, r0c1, ..., r9c9)
 rel_values = np.array(rels.sort("area")["relativity"].to_list())
+# Renormalise to geometric mean = 1.0 (consistent with true_rel_grid normalisation below)
+rel_values = rel_values / np.exp(np.log(rel_values).mean())
 rel_grid   = rel_values.reshape(NROWS, NCOLS)
 
 true_rel_grid = np.exp(true_log_effect - true_log_effect.mean()).reshape(NROWS, NCOLS)
+
+# Verify both arrays are normalised consistently (geometric mean ~1.0)
+assert abs(np.exp(np.log(rel_values).mean()) - 1.0) < 1e-6, "BYM2 relativities not normalised"
+assert abs(np.exp(np.log(true_rel_grid.ravel()).mean()) - 1.0) < 1e-6, "True relativities not normalised"
 
 naive_freq = claims / exposure
 naive_rel  = naive_freq / (claims.sum() / exposure.sum())
@@ -592,13 +597,13 @@ rels_compare = rels.join(
     on="area",
 )
 
-corr = (
+diff = (
     rels_compare["relativity"].to_numpy()
     - rels_compare["rel_2s"].to_numpy()
 )
 print(f"Integrated vs. two-stage relativities:")
 print(f"  Correlation:        {np.corrcoef(rels_compare['relativity'], rels_compare['rel_2s'])[0,1]:.4f}")
-print(f"  Mean abs difference: {np.abs(corr).mean():.4f}")
+print(f"  Mean abs difference: {np.abs(diff).mean():.4f}")
 print()
 print("In practice, both approaches give similar results when the base model is well-specified.")
 print("The two-stage approach is preferred for production because of its auditability.")

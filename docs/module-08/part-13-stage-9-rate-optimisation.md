@@ -89,7 +89,7 @@ print(f"  Channel split:            PCW={sum(channels=='PCW'):,}, "
 config = ConstraintConfig(
     lr_max=LR_TARGET,            # loss ratio must not exceed 72%
     retention_min=VOLUME_FLOOR,  # retain at least 97% of policies by volume
-    max_rate_change=FACTOR_UPPER - 1.0,   # maximum increase per factor: 15%
+    max_rate_change=0.15,   # maximum increase per factor: 15%
 )
 
 opt = PortfolioOptimiser(
@@ -108,10 +108,10 @@ print(f"\nOptimisation result:")
 print(f"  Converged:              {result.converged}")
 print(f"  Expected LR:            {result.expected_loss_ratio:.4f}  "
       f"(target: {LR_TARGET:.4f})")
-print(f"  Expected volume:        {result.expected_volume_ratio:.4f}  "
+print(f"  Expected volume:        {result.expected_retention:.4f}  "
       f"(floor: {VOLUME_FLOOR:.4f})")
 print(f"  Expected profit:        £{result.expected_profit:,.0f}")
-print(f"  ENBP violations:        {result.enbp_violations}")
+print(f"  ENBP violations:        {int(result.summary_df["enbp_binding"].sum())}")
 ```
 
 **What `result.converged` means.** The SLSQP solver converges when the gradient of the objective function is below a tolerance threshold (default: 1e-9) and all constraints are satisfied within tolerance. If the optimiser does not converge, the result is the best feasible point found — it may satisfy constraints but is not guaranteed to be optimal. Always check `converged` before presenting results.
@@ -128,11 +128,11 @@ If the optimiser does not converge with the default settings, try:
 frontier = EfficientFrontier(
     optimiser=opt,
     sweep_param="lr_max",
-)
-frontier_df = frontier.trace(
-    lr_range=(0.68, 0.78),
+    sweep_range=(0.68, 0.78),
     n_points=12,
 )
+frontier_result = frontier.run()
+frontier_df = frontier_result.data
 
 print("\nEfficient frontier:")
 print(frontier_df.to_string() if hasattr(frontier_df, "to_string") else frontier_df)
@@ -161,9 +161,9 @@ rate_summary = pl.DataFrame({
     "volume_floor":        [VOLUME_FLOOR],
     "optimiser_converged": [bool(result.converged)],
     "expected_lr":         [round(float(result.expected_loss_ratio), 4)],
-    "expected_volume":     [round(float(result.expected_volume_ratio), 4)],
+    "expected_volume":     [round(float(result.expected_retention), 4)],
     "expected_profit":     [round(float(result.expected_profit), 2)],
-    "n_enbp_violations":   [int(result.enbp_violations)],
+    "n_enbp_violations":   [int(result.summary_df["enbp_binding"].sum())],
     "n_renewal_policies":  [n_renewal],
     "freq_run_id":         [freq_run_id],
     "sev_run_id":          [sev_run_id],

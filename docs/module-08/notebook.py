@@ -841,15 +841,21 @@ result = opt.optimise()
 print(f"\nOptimisation result:")
 print(f"  Converged:     {result.converged}")
 print(f"  Expected LR:   {result.expected_loss_ratio:.4f}  (target: {LR_TARGET})")
-print(f"  Expected vol:  {result.expected_volume_ratio:.4f}  (floor: {VOLUME_FLOOR})")
+print(f"  Expected vol:  {result.expected_retention:.4f}  (floor: {VOLUME_FLOOR})")
 print(f"  Expected P&L:  £{result.expected_profit:,.0f}")
-print(f"  ENBP violations: {result.enbp_violations}")
+print(f"  ENBP violations: {int(result.summary_df["enbp_binding"].sum())}")
 
 # COMMAND ----------
 
 # Efficient frontier
-frontier = EfficientFrontier(optimiser=opt, sweep_param="lr_max")
-frontier_df = frontier.trace(lr_range=(0.68, 0.78), n_points=12)
+frontier = EfficientFrontier(
+    optimiser=opt,
+    sweep_param="lr_max",
+    sweep_range=(0.68, 0.78),
+    n_points=12,
+)
+frontier_result = frontier.run()
+frontier_df = frontier_result.data
 
 (
     spark.createDataFrame(frontier_df.to_pandas() if hasattr(frontier_df, "to_pandas") else frontier_df)
@@ -865,9 +871,9 @@ rate_summary = pl.DataFrame({
     "volume_floor":        [VOLUME_FLOOR],
     "optimiser_converged": [bool(result.converged)],
     "expected_lr":         [round(float(result.expected_loss_ratio), 4)],
-    "expected_volume":     [round(float(result.expected_volume_ratio), 4)],
+    "expected_volume":     [round(float(result.expected_retention), 4)],
     "expected_profit":     [round(float(result.expected_profit), 2)],
-    "enbp_violations":     [int(result.enbp_violations)],
+    "enbp_violations":     [int(result.summary_df["enbp_binding"].sum())],
     "freq_run_id":         [freq_run_id],
     "sev_run_id":          [sev_run_id],
 })
@@ -931,8 +937,8 @@ audit_record = {
     "volume_floor":           VOLUME_FLOOR,
     "optimiser_converged":    bool(result.converged),
     "expected_lr":            round(float(result.expected_loss_ratio), 4),
-    "expected_volume":        round(float(result.expected_volume_ratio), 4),
-    "enbp_violations":        int(result.enbp_violations),
+    "expected_volume":        round(float(result.expected_retention), 4),
+    "enbp_violations":        int(result.summary_df["enbp_binding"].sum()),
     "catalog":                CATALOG,
     "schema":                 SCHEMA,
     "pipeline_notes":         "Module 8 capstone — synthetic UK motor data",
@@ -982,7 +988,7 @@ print(f"Murphy verdict:      {cal_murphy_verdict}")
 print(f"Conformal min cov:   {min_cov:.3f}")
 print(f"Optimiser converged: {result.converged}")
 print(f"Expected LR:         {result.expected_loss_ratio:.4f}")
-print(f"Expected volume:     {result.expected_volume_ratio:.4f}")
+print(f"Expected volume:     {result.expected_retention:.4f}")
 print()
 print("Delta tables written:")
 for k, v in TABLES.items():

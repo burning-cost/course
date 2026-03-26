@@ -27,7 +27,6 @@ cal_report = checker.check(
     y=y_test.astype(float),
     y_hat=freq_pred_test,
     exposure=w_test,
-    n_bins=10,
     seed=42,
 )
 
@@ -98,7 +97,7 @@ if cal_murphy_verdict == "RECALIBRATE":
 
     # Verify: re-run balance check on corrected predictions
     verify = CalibrationChecker(distribution="poisson")
-    v_report = verify.check(y_test.astype(float), freq_pred_final, w_test, n_bins=10, seed=42)
+    v_report = verify.check(y_test.astype(float), freq_pred_final, w_test, seed=42)
     print(f"Post-correction balance ratio: {v_report.balance.balance_ratio:.4f}  (target: 1.000)")
 
 elif cal_murphy_verdict == "REFIT":

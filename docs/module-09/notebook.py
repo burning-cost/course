@@ -423,7 +423,9 @@ print(f"\nPolicies with < £10 headroom: {tight:,} ({100 * tight / len(audit):.1
 
 # COMMAND ----------
 
-mlflow.set_experiment("/Users/your.email@company.com/insurance-pricing/elasticity")
+mlflow.set_experiment(
+    f"/Users/{spark.sql('SELECT current_user()').collect()[0][0]}/insurance-pricing/elasticity"
+)
 
 with mlflow.start_run(run_name="renewal_elasticity_causal_forest"):
     mlflow.log_metric("ate", ate)

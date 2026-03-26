@@ -28,6 +28,14 @@ assert "X"        in dir(), "Need X (Polars DataFrame) from Part 5"
 assert "y"        in dir(), "Need y (claim counts) from Part 5"
 assert "exposure_arr" in dir(), "Need exposure_arr from Part 5"
 
+# poisson_deviance is defined in the tutorial (Part 6). Redefine here in case
+# you are starting fresh from the instruction to re-run Parts 4-6.
+def poisson_deviance(y_true, y_pred, weights):
+    import numpy as np
+    eps = 1e-12
+    d = np.where(y_true > 0, y_true * np.log(y_true / np.maximum(y_pred, eps)), 0.0) - (y_true - y_pred)
+    return 2.0 * float((weights * d).sum())
+
 print(f"GLM deviance: {poisson_deviance(y, mu_glm, exposure_arr):,.1f}")
 print(f"Policies:     {len(X):,}")
 print(f"Features:     {X.columns}")
@@ -209,9 +217,10 @@ print(f"For 12 features: {12*11//2} pairs")
 
 ```python
 from insurance_interactions import InteractionDetector, DetectorConfig
-
-%md ## Exercise 2: CANN configuration comparison
 ```
+
+`%md ## Exercise 2: CANN configuration comparison`
+
 
 ### Tasks
 
@@ -401,8 +410,10 @@ print(f"         Ratio (10th / 1st): {score_10 / score_1:.4f}")
 ### Setup
 
 ```python
-%md ## Exercise 3: MLP-M and feature correlation
 ```
+
+`%md ## Exercise 3: MLP-M and feature correlation`
+
 
 ### Tasks
 
@@ -553,9 +564,10 @@ from glum import GeneralizedLinearRegressor
 import pandas as pd
 import scipy.stats
 import numpy as np
-
-%md ## Exercise 4: Manual likelihood-ratio test
 ```
+
+`%md ## Exercise 4: Manual likelihood-ratio test`
+
 
 ### Tasks
 
@@ -760,9 +772,10 @@ print(f"  BIC penalty per param: {np.log(n):.2f}")
 ```python
 from insurance_interactions import build_glm_with_interactions
 import numpy as np
-
-%md ## Exercise 5: Enhanced GLM coefficients
 ```
+
+`%md ## Exercise 5: Enhanced GLM coefficients`
+
 
 ### Tasks
 
@@ -924,8 +937,10 @@ for name, coef in sorted(ncd_ix_cols, key=lambda x: x[0]):
 ### Setup
 
 ```python
-%md ## Exercise 6: Out-of-sample validation
 ```
+
+`%md ## Exercise 6: Out-of-sample validation`
+
 
 ### Tasks
 
@@ -1216,9 +1231,10 @@ try:
 except ImportError:
     SHAP_AVAILABLE = False
     print("Skipping Exercise 7 -- catboost or shapiq not installed.")
-
-%md ## Exercise 7: SHAP interaction validation
 ```
+
+`%md ## Exercise 7: SHAP interaction validation`
+
 
 ### Tasks
 
@@ -1390,7 +1406,10 @@ if SHAP_AVAILABLE:
 ### Setup
 
 ```python
-%md ## Exercise 8: Severity interactions
+```
+
+`%md ## Exercise 8: Severity interactions`
+
 import numpy as np
 import polars as pl
 
@@ -1600,9 +1619,10 @@ import numpy as np
 
 EXPERIMENT_NAME = "module_10_ex9_pipeline"
 mlflow.set_experiment(EXPERIMENT_NAME)
-
-%md ## Exercise 9: End-to-end production pipeline
 ```
+
+`%md ## Exercise 9: End-to-end production pipeline`
+
 
 ### Tasks
 

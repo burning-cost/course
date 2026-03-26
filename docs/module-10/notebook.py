@@ -547,9 +547,10 @@ print(comparison)
 
 # Show interaction term coefficients
 # glum stores feature names in feature_names_ (not feature_names_in_)
-coef_names = enhanced_glm.feature_names_
-ix_cols    = [c for c in coef_names if c.startswith("_ix_")]
-ix_coefs   = [enhanced_glm.coef_[list(coef_names).index(c)] for c in ix_cols]
+# Convert to list once so .index() lookups are O(n) on a list, not on the raw iterator
+coef_name_list = list(enhanced_glm.feature_names_)
+ix_cols    = [c for c in coef_name_list if c.startswith("_ix_")]
+ix_coefs   = [enhanced_glm.coef_[coef_name_list.index(c)] for c in ix_cols]
 
 print(f"\nBase GLM parameters:      {len(glm_base.coef_) + 1}")
 print(f"Enhanced GLM parameters:  {len(enhanced_glm.coef_) + 1}")
@@ -562,6 +563,11 @@ for name, coef in sorted(zip(ix_cols, ix_coefs), key=lambda x: abs(x[1]), revers
 
 # Quantify the improvement using the comparison table
 # delta_deviance in the comparison table is base - enhanced (positive = improvement)
+base_row       = comparison.filter(pl.col("model") == "base_glm")
+base_deviance  = float(base_row["deviance"][0])
+base_aic       = float(base_row["deviance_aic"][0])
+base_n_params  = int(base_row["n_params"][0])
+
 int_row        = comparison.filter(pl.col("model") == "glm_with_interactions")
 int_deviance   = float(int_row["deviance"][0])
 int_aic        = float(int_row["deviance_aic"][0])
